@@ -117,6 +117,13 @@
     font-size:.75rem; color:var(--tinta-suave); background:#F0EADA;
     border-radius:8px; padding:8px 10px; margin-top:10px;
   }
+
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+  .chip{
+    padding:8px 14px; border-radius:999px; border:1px solid var(--borde);
+    background:var(--panel); color:var(--tinta-suave); font-size:.8rem; cursor:pointer;
+  }
+  .chip.activo{background:var(--oliva); color:#fff; border-color:var(--oliva); font-weight:600;}
 </style>
 </head>
 <body>
@@ -145,6 +152,7 @@
 
 <section>
   <h2>Registrar</h2>
+  <div class="chips" id="chipsCategoria"></div>
   <div class="grid-acciones">
     <div class="accion" onclick="abrirModal('modalGuardadas')">
       <span class="icono">🍽️</span>
@@ -161,6 +169,10 @@
     <div class="accion" onclick="abrirModal('modalAlimentoUSDA')">
       <span class="icono">🌾</span>
       <span class="txt">Alimento genérico (USDA)</span>
+    </div>
+    <div class="accion" onclick="abrirModal('modalRecientes')">
+      <span class="icono">🕐</span>
+      <span class="txt">Recientes / frecuentes</span>
     </div>
   </div>
 </section>
@@ -260,6 +272,19 @@
   </div>
 </div>
 
+<!-- Modal: recientes / frecuentes -->
+<div class="modal-fondo" id="fondoRecientes">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalRecientes')">✕</button>
+    <h3>Recientes / frecuentes</h3>
+    <p class="aviso">Tocá cualquiera para registrarlo de nuevo hoy, con la categoría seleccionada arriba.</p>
+    <h3 style="font-size:.95rem; margin-top:16px;">Frecuentes</h3>
+    <div class="lista-comidas" id="listaFrecuentes"></div>
+    <h3 style="font-size:.95rem; margin-top:16px;">Recientes</h3>
+    <div class="lista-comidas" id="listaRecientes"></div>
+  </div>
+</div>
+
 <!-- Modal: editar registro del día -->
 <div class="modal-fondo" id="fondoEditarRegistro">
   <div class="modal">
@@ -274,6 +299,16 @@
       <label>Calorías (kcal)</label>
       <input type="number" id="editarKcal">
     </div>
+    <div class="campo">
+      <label>Categoría</label>
+      <select id="editarCategoria">
+        <option value="Desayuno">Desayuno</option>
+        <option value="Almuerzo">Almuerzo</option>
+        <option value="Merienda">Merienda</option>
+        <option value="Cena">Cena</option>
+        <option value="Snack">Snack</option>
+      </select>
+    </div>
     <button class="btn btn-primario" onclick="guardarEdicionRegistro()">Guardar cambios</button>
     <button class="btn btn-secundario" onclick="borrarRegistro()" style="color:var(--tomate); border-color:var(--tomate);">Eliminar registro</button>
   </div>
@@ -286,6 +321,32 @@
 </nav>
 
 <script>
+// ---------- Categoría de la comida (Desayuno/Almuerzo/Merienda/Cena/Snack) ----------
+const CATEGORIAS = ['Desayuno','Almuerzo','Merienda','Cena','Snack'];
+
+function categoriaPorHora(){
+  const h = new Date().getHours();
+  if(h < 11) return 'Desayuno';
+  if(h < 15) return 'Almuerzo';
+  if(h < 19) return 'Merienda';
+  if(h < 23) return 'Cena';
+  return 'Snack';
+}
+
+let categoriaActual = categoriaPorHora();
+
+function renderizarChipsCategoria(){
+  const cont = document.getElementById('chipsCategoria');
+  cont.innerHTML = CATEGORIAS.map(c => `
+    <button class="chip ${c === categoriaActual ? 'activo' : ''}" onclick="seleccionarCategoria('${c}')">${c}</button>
+  `).join('');
+}
+
+function seleccionarCategoria(c){
+  categoriaActual = c;
+  renderizarChipsCategoria();
+}
+
 // ---------- Claves de almacenamiento ----------
 const CLAVE_COMIDAS_GUARDADAS = 'nutricion_comidas_guardadas';
 const CLAVE_REGISTRO_DIARIO = 'nutricion_registro_diario'; // { 'YYYY-MM-DD': [ {nombre, kcal, prot, hora, origen} ] }
@@ -327,7 +388,7 @@ function agregarAlRegistroHoy(item){
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
   const hoy = hoyISO();
   if(!registro[hoy]) registro[hoy] = [];
-  registro[hoy].push({ ...item, hora: new Date().toISOString() });
+  registro[hoy].push({ categoria: categoriaActual, ...item, hora: new Date().toISOString() });
   escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
   renderizarTodo();
 }
@@ -342,6 +403,8 @@ function totalConsumidoHoy(){
 function renderizarTodo(){
   document.getElementById('fechaHoy').textContent =
     new Date().toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long' });
+
+  renderizarChipsCategoria();
 
   const consumido = totalConsumidoHoy();
   const gasto = calcularGastoHoy();
@@ -367,7 +430,7 @@ function renderizarTodo(){
       <div class="comida-item" onclick="abrirEdicionRegistro(${idx})">
         <div>
           <div class="nombre">${i.nombre}</div>
-          <div class="detalle">${new Date(i.hora).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${i.origen || ''}</div>
+          <div class="detalle">${i.categoria || ''} · ${new Date(i.hora).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${i.origen || ''}</div>
         </div>
         <div class="kcal">${i.kcal} kcal</div>
       </div>
@@ -810,6 +873,78 @@ function registrarUSDA(kcal100){
   cerrarModal('modalAlimentoUSDA');
 }
 
+// ---------- Recientes / frecuentes (a través de todos los días registrados) ----------
+function obtenerTodosLosItems(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const todos = [];
+  Object.keys(registro).forEach(fecha => {
+    (registro[fecha] || []).forEach(item => todos.push({ ...item, fecha }));
+  });
+  return todos;
+}
+
+function calcularRecientes(todos, limite = 8){
+  const vistos = new Set();
+  const ordenados = [...todos].sort((a, b) => new Date(b.hora) - new Date(a.hora));
+  const recientes = [];
+  for(const item of ordenados){
+    if(vistos.has(item.nombre)) continue;
+    vistos.add(item.nombre);
+    recientes.push(item);
+    if(recientes.length >= limite) break;
+  }
+  return recientes;
+}
+
+function calcularFrecuentes(todos, limite = 8){
+  const conteo = {};
+  todos.forEach(item => {
+    if(!conteo[item.nombre]) conteo[item.nombre] = { item, veces:0 };
+    conteo[item.nombre].veces++;
+  });
+  return Object.values(conteo)
+    .filter(c => c.veces > 1)
+    .sort((a, b) => b.veces - a.veces)
+    .slice(0, limite)
+    .map(c => c.item);
+}
+
+function renderizarRecientesYFrecuentes(){
+  const todos = obtenerTodosLosItems();
+  const recientes = calcularRecientes(todos);
+  const frecuentes = calcularFrecuentes(todos);
+
+  const renderLista = (lista, elId, vacioTxt) => {
+    const el = document.getElementById(elId);
+    if(lista.length === 0){
+      el.innerHTML = `<div class="vacio">${vacioTxt}</div>`;
+      return;
+    }
+    el.innerHTML = lista.map(i => `
+      <div class="comida-item" onclick='reregistrarItem(${JSON.stringify(i)})'>
+        <div>
+          <div class="nombre">${i.nombre}</div>
+          <div class="detalle">${i.origen || ''}</div>
+        </div>
+        <div class="kcal">${i.kcal} kcal</div>
+      </div>
+    `).join('');
+  };
+
+  renderLista(frecuentes, 'listaFrecuentes', 'Todavía no hay comidas repetidas.');
+  renderLista(recientes, 'listaRecientes', 'Todavía no registraste nada.');
+}
+
+function reregistrarItem(item){
+  agregarAlRegistroHoy({
+    nombre: item.nombre,
+    kcal: item.kcal,
+    origen: item.origen,
+    nutrientes: item.nutrientes || []
+  });
+  cerrarModal('modalRecientes');
+}
+
 // ---------- Editar / borrar registro del día ----------
 let idxRegistroEnEdicion = null;
 
@@ -821,6 +956,7 @@ function abrirEdicionRegistro(idx){
   idxRegistroEnEdicion = idx;
   document.getElementById('editarNombre').value = item.nombre;
   document.getElementById('editarKcal').value = item.kcal;
+  document.getElementById('editarCategoria').value = item.categoria || categoriaActual;
 
   const panelDiv = document.getElementById('panelNutrientesRegistro');
   if(item.nutrientes && item.nutrientes.length > 0){
@@ -847,6 +983,7 @@ function guardarEdicionRegistro(){
   if(idxRegistroEnEdicion === null) return;
   const nombre = document.getElementById('editarNombre').value.trim();
   const kcal = parseFloat(document.getElementById('editarKcal').value);
+  const categoria = document.getElementById('editarCategoria').value;
   if(!nombre || isNaN(kcal)){ alert('Completá nombre y calorías.'); return; }
 
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
@@ -854,6 +991,7 @@ function guardarEdicionRegistro(){
   if(registro[hoy] && registro[hoy][idxRegistroEnEdicion]){
     registro[hoy][idxRegistroEnEdicion].nombre = nombre;
     registro[hoy][idxRegistroEnEdicion].kcal = kcal;
+    registro[hoy][idxRegistroEnEdicion].categoria = categoria;
     escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
   }
   idxRegistroEnEdicion = null;
@@ -881,6 +1019,7 @@ function abrirModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
   if(fondo) fondo.classList.add('activo');
   if(id === 'modalNutrientesDia') renderizarNutrientesDia();
+  if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
 }
 function cerrarModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
