@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Nutrición</title>
+<style>
+  :root{
+    --crema:#F6F1E4;
+    --panel:#FFFCF5;
+    --tinta:#2B2620;
+    --tinta-suave:#6B6252;
+    --borde:#E3D9C0;
+    --mostaza:#C98A1E;
+    --oliva:#5B6E4F;
+    --tomate:#B4432E;
+    --sombra:0 1px 2px rgba(43,38,32,.06), 0 4px 14px rgba(43,38,32,.06);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0 0 90px 0;
+    background:var(--crema); color:var(--tinta);
+    font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  h1,h2,h3{
+    font-family:Georgia,"Iowan Old Style","Times New Roman",serif;
+    font-weight:600; margin:0 0 4px 0; letter-spacing:.2px;
+  }
+  header{
+    padding:22px 18px 16px 18px; background:var(--panel);
+    border-bottom:1px solid var(--borde);
+  }
+  header h1{font-size:1.5rem;}
+  header p{margin:2px 0 0 0; color:var(--tinta-suave); font-size:.85rem;}
+
+  .resumen{
+    margin:16px; padding:18px; background:var(--panel);
+    border:1px solid var(--borde); border-radius:14px; box-shadow:var(--sombra);
+  }
+  .resumen .fila{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;}
+  .resumen .fila:last-child{margin-bottom:0;}
+  .resumen .num{font-family:Georgia,serif; font-size:1.6rem; font-weight:700;}
+  .resumen .etiqueta{font-size:.8rem; color:var(--tinta-suave);}
+  .balance-pos{color:var(--oliva);}
+  .balance-neg{color:var(--tomate);}
+  .barra{height:8px; border-radius:999px; background:var(--borde); overflow:hidden; margin-top:10px;}
+  .barra > div{height:100%; background:var(--mostaza); border-radius:999px; transition:width .3s;}
+
+  section{margin:20px 16px;}
+  section h2{font-size:1.05rem; margin-bottom:10px;}
+
+  .grid-acciones{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
+  .accion{
+    background:var(--panel); border:1px solid var(--borde); border-radius:12px;
+    padding:14px 8px; text-align:center; cursor:pointer; box-shadow:var(--sombra);
+  }
+  .accion .icono{font-size:1.5rem; display:block; margin-bottom:6px;}
+  .accion .txt{font-size:.75rem; color:var(--tinta-suave);}
+
+  .lista-comidas{display:flex; flex-direction:column; gap:8px;}
+  .comida-item{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--panel); border:1px solid var(--borde); border-radius:10px;
+    padding:12px 14px; cursor:pointer;
+  }
+  .comida-item .nombre{font-weight:600; font-size:.92rem;}
+  .comida-item .detalle{font-size:.78rem; color:var(--tinta-suave); margin-top:2px;}
+  .comida-item .kcal{font-size:.85rem; font-weight:700; color:var(--mostaza); white-space:nowrap;}
+
+  .vacio{
+    text-align:center; padding:24px 12px; color:var(--tinta-suave);
+    border:1px dashed var(--borde); border-radius:12px; font-size:.85rem;
+  }
+
+  .modal-fondo{
+    position:fixed; inset:0; background:rgba(43,38,32,.45); display:none;
+    align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .modal-fondo.activo{display:flex;}
+  .modal{
+    background:var(--panel); width:100%; max-width:480px;
+    border-radius:18px 18px 0 0; padding:20px 18px 26px 18px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .modal h3{margin-bottom:14px;}
+  .campo{margin-bottom:12px;}
+  .campo label{display:block; font-size:.78rem; color:var(--tinta-suave); margin-bottom:4px;}
+  .campo input, .campo select{
+    width:100%; padding:10px 12px; border:1px solid var(--borde);
+    border-radius:8px; font-size:.95rem; background:#fff; color:var(--tinta);
+  }
+  .btn{
+    display:block; width:100%; padding:13px; border:none; border-radius:10px;
+    font-size:.95rem; font-weight:600; cursor:pointer; margin-top:6px;
+  }
+  .btn-primario{background:var(--oliva); color:#fff;}
+  .btn-secundario{background:transparent; color:var(--tinta-suave); border:1px solid var(--borde);}
+  .btn-cerrar{
+    position:absolute; top:14px; right:16px; background:none; border:none;
+    font-size:1.3rem; color:var(--tinta-suave); cursor:pointer;
+  }
+  .modal{position:relative;}
+
+  nav.tabs{
+    position:fixed; bottom:0; left:0; right:0; background:var(--panel);
+    border-top:1px solid var(--borde); display:flex;
+  }
+  nav.tabs button{
+    flex:1; padding:12px 4px 10px 4px; background:none; border:none;
+    font-size:.72rem; color:var(--tinta-suave); cursor:pointer;
+  }
+  nav.tabs button.activo{color:var(--oliva); font-weight:700;}
+  nav.tabs .icono-tab{display:block; font-size:1.2rem; margin-bottom:2px;}
+
+  .aviso{
+    font-size:.75rem; color:var(--tinta-suave); background:#F0EADA;
+    border-radius:8px; padding:8px 10px; margin-top:10px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Nutrición</h1>
+  <p id="fechaHoy"></p>
+</header>
+
+<section class="resumen">
+  <div class="fila">
+    <span class="etiqueta">Consumido hoy</span>
+    <span class="num" id="totalConsumido">0 kcal</span>
+  </div>
+  <div class="fila">
+    <span class="etiqueta">Gasto (entrenamiento)</span>
+    <span class="num" id="totalGasto" style="font-size:1.1rem;">0 kcal</span>
+  </div>
+  <div class="fila">
+    <span class="etiqueta">Balance</span>
+    <span class="num" id="balance">0 kcal</span>
+  </div>
+  <div class="barra"><div id="barraProgreso" style="width:0%;"></div></div>
+</section>
+
+<section>
+  <h2>Registrar</h2>
+  <div class="grid-acciones">
+    <div class="accion" onclick="abrirModal('modalGuardadas')">
+      <span class="icono">🍽️</span>
+      <span class="txt">Comida guardada</span>
+    </div>
+    <div class="accion" onclick="abrirModal('modalCodigoBarras')">
+      <span class="icono">📷</span>
+      <span class="txt">Código de barras</span>
+    </div>
+    <div class="accion" onclick="abrirModal('modalFoto')">
+      <span class="icono">✨</span>
+      <span class="txt">Foto (eventual)</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Hoy</h2>
+  <div class="lista-comidas" id="listaHoy">
+    <div class="vacio">Todavía no registraste comidas hoy.</div>
+  </div>
+</section>
+
+<!-- Modal: comidas guardadas -->
+<div class="modal-fondo" id="fondoGuardadas">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalGuardadas')">✕</button>
+    <h3>Comidas guardadas</h3>
+    <div class="lista-comidas" id="listaGuardadas"></div>
+    <button class="btn btn-secundario" onclick="abrirModal('modalNuevaGuardada')" style="margin-top:14px;">+ Nueva comida guardada</button>
+  </div>
+</div>
+
+<!-- Modal: nueva comida guardada (manual) -->
+<div class="modal-fondo" id="fondoNuevaGuardada">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalNuevaGuardada')">✕</button>
+    <h3>Nueva comida guardada</h3>
+    <div class="campo">
+      <label>Nombre</label>
+      <input type="text" id="nuevaNombre" placeholder="Ej: Pollo con salsa mostaza-miel">
+    </div>
+    <div class="campo">
+      <label>Calorías (kcal)</label>
+      <input type="number" id="nuevaKcal" placeholder="Ej: 372">
+    </div>
+    <div class="campo">
+      <label>Proteínas (g) — opcional</label>
+      <input type="number" id="nuevaProt" placeholder="Ej: 56">
+    </div>
+    <button class="btn btn-primario" onclick="guardarComidaManual()">Guardar</button>
+  </div>
+</div>
+
+<!-- Modal: código de barras -->
+<div class="modal-fondo" id="fondoCodigoBarras">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalCodigoBarras')">✕</button>
+    <h3>Código de barras</h3>
+    <div class="campo">
+      <label>Código (o escaneá con la cámara)</label>
+      <input type="text" id="inputCodigoBarras" placeholder="Ej: 7790070410123" inputmode="numeric">
+    </div>
+    <button class="btn btn-secundario" id="btnEscanear" onclick="iniciarEscaneo()">Escanear con cámara</button>
+    <button class="btn btn-primario" onclick="buscarProducto()">Buscar en Open Food Facts</button>
+    <div id="resultadoProducto"></div>
+    <p class="aviso">Consulta gratuita a Open Food Facts, sin API key. Si no encuentra el producto, podés cargarlo a mano como comida guardada.</p>
+  </div>
+</div>
+
+<!-- Modal: foto con Claude (eventual) -->
+<div class="modal-fondo" id="fondoFoto">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalFoto')">✕</button>
+    <h3>Identificar por foto</h3>
+    <div class="campo">
+      <label>Sacar o elegir foto del plato</label>
+      <input type="file" accept="image/*" capture="environment" id="inputFoto">
+    </div>
+    <button class="btn btn-primario" onclick="identificarFoto()">Identificar con Claude</button>
+    <div id="resultadoFoto"></div>
+    <p class="aviso">Reservá esta opción para comidas eventuales — cada foto tiene un costo de API. Para tu rutina diaria usá "Comida guardada".</p>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button class="activo"><span class="icono-tab">📋</span>Hoy</button>
+  <button onclick="abrirModal('modalGuardadas')"><span class="icono-tab">🍽️</span>Guardadas</button>
+  <button><span class="icono-tab">📊</span>Historial</button>
+</nav>
+
+<script>
+// ---------- Claves de almacenamiento ----------
+const CLAVE_COMIDAS_GUARDADAS = 'nutricion_comidas_guardadas';
+const CLAVE_REGISTRO_DIARIO = 'nutricion_registro_diario'; // { 'YYYY-MM-DD': [ {nombre, kcal, prot, hora, origen} ] }
+const CLAVE_FORMA = 'entrenamiento_forma_registro'; // compartida con apps de deporte
+
+function hoyISO(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function leerJSON(clave, porDefecto){
+  try{
+    const raw = localStorage.getItem(clave);
+    return raw ? JSON.parse(raw) : porDefecto;
+  }catch(e){ console.error('Error leyendo', clave, e); return porDefecto; }
+}
+function escribirJSON(clave, valor){
+  try{
+    localStorage.setItem(clave, JSON.stringify(valor));
+    return true;
+  }catch(e){
+    console.error('Error guardando', clave, e);
+    alert('No se pudo guardar (¿almacenamiento lleno?). Revisá el backup de datos.');
+    return false;
+  }
+}
+
+// ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
+function calcularGastoHoy(){
+  const registro = leerJSON(CLAVE_FORMA, []);
+  const hoy = hoyISO();
+  return registro
+    .filter(r => r.fecha === hoy && typeof r.calorias === 'number')
+    .reduce((acc, r) => acc + r.calorias, 0);
+}
+
+// ---------- Registro diario de comidas ----------
+function agregarAlRegistroHoy(item){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const hoy = hoyISO();
+  if(!registro[hoy]) registro[hoy] = [];
+  registro[hoy].push({ ...item, hora: new Date().toISOString() });
+  escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
+  renderizarTodo();
+}
+
+function totalConsumidoHoy(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[hoyISO()] || [];
+  return items.reduce((acc, i) => acc + (i.kcal || 0), 0);
+}
+
+// ---------- Render principal ----------
+function renderizarTodo(){
+  document.getElementById('fechaHoy').textContent =
+    new Date().toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long' });
+
+  const consumido = totalConsumidoHoy();
+  const gasto = calcularGastoHoy();
+  const balance = gasto - consumido;
+
+  document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
+  document.getElementById('totalGasto').textContent = `${gasto} kcal`;
+  const elBalance = document.getElementById('balance');
+  elBalance.textContent = `${balance >= 0 ? '+' : ''}${balance} kcal`;
+  elBalance.className = 'num ' + (balance >= 0 ? 'balance-pos' : 'balance-neg');
+
+  const pct = gasto > 0 ? Math.min(100, Math.round((consumido / gasto) * 100)) : 0;
+  document.getElementById('barraProgreso').style.width = pct + '%';
+
+  // Lista de hoy
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[hoyISO()] || [];
+  const listaHoy = document.getElementById('listaHoy');
+  if(items.length === 0){
+    listaHoy.innerHTML = '<div class="vacio">Todavía no registraste comidas hoy.</div>';
+  }else{
+    listaHoy.innerHTML = items.map(i => `
+      <div class="comida-item">
+        <div>
+          <div class="nombre">${i.nombre}</div>
+          <div class="detalle">${new Date(i.hora).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${i.origen || ''}</div>
+        </div>
+        <div class="kcal">${i.kcal} kcal</div>
+      </div>
+    `).join('');
+  }
+
+  // Lista de comidas guardadas
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const listaGuardadas = document.getElementById('listaGuardadas');
+  if(guardadas.length === 0){
+    listaGuardadas.innerHTML = '<div class="vacio">No tenés comidas guardadas todavía.</div>';
+  }else{
+    listaGuardadas.innerHTML = guardadas.map((c, idx) => `
+      <div class="comida-item" onclick="registrarGuardada(${idx})">
+        <div>
+          <div class="nombre">${c.nombre}</div>
+          <div class="detalle">${c.prot ? c.prot + 'g prot · ' : ''}toco para registrar</div>
+        </div>
+        <div class="kcal">${c.kcal} kcal</div>
+      </div>
+    `).join('');
+  }
+}
+
+function registrarGuardada(idx){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+  agregarAlRegistroHoy({ nombre:c.nombre, kcal:c.kcal, prot:c.prot, origen:'guardada' });
+  cerrarModal('modalGuardadas');
+}
+
+function guardarComidaManual(){
+  const nombre = document.getElementById('nuevaNombre').value.trim();
+  const kcal = parseFloat(document.getElementById('nuevaKcal').value);
+  const prot = parseFloat(document.getElementById('nuevaProt').value) || null;
+  if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
+
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  guardadas.push({ nombre, kcal, prot });
+  escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
+
+  document.getElementById('nuevaNombre').value = '';
+  document.getElementById('nuevaKcal').value = '';
+  document.getElementById('nuevaProt').value = '';
+  cerrarModal('modalNuevaGuardada');
+  abrirModal('modalGuardadas');
+}
+
+// ---------- Código de barras: Open Food Facts ----------
+async function buscarProducto(){
+  const codigo = document.getElementById('inputCodigoBarras').value.trim();
+  const resultadoDiv = document.getElementById('resultadoProducto');
+  if(!codigo){ alert('Ingresá un código.'); return; }
+  resultadoDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const resp = await fetch(`https://world.openfoodfacts.org/api/v2/product/${codigo}.json`);
+    const data = await resp.json();
+    if(data.status !== 1){
+      resultadoDiv.innerHTML = '<p class="aviso">No se encontró el producto. Podés cargarlo a mano como comida guardada.</p>';
+      return;
+    }
+    const p = data.product;
+    const kcal100 = p.nutriments?.['energy-kcal_100g'] ?? null;
+    resultadoDiv.innerHTML = `
+      <div class="campo">
+        <label>${p.product_name || 'Producto sin nombre'} ${p.brands ? '· '+p.brands : ''}</label>
+        <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de calorías'}</p>
+      </div>
+      <div class="campo">
+        <label>Gramos consumidos</label>
+        <input type="number" id="gramosConsumidos" placeholder="Ej: 50">
+      </div>
+      <button class="btn btn-primario" onclick='registrarProducto(${JSON.stringify(p.product_name || "Producto")}, ${kcal100})'>Registrar</button>
+    `;
+  }catch(e){
+    resultadoDiv.innerHTML = '<p class="aviso">Error de conexión con Open Food Facts.</p>';
+    console.error(e);
+  }
+}
+
+function registrarProducto(nombre, kcal100){
+  const gramos = parseFloat(document.getElementById('gramosConsumidos').value);
+  if(isNaN(gramos) || kcal100 === null){ alert('Ingresá los gramos consumidos.'); return; }
+  const kcal = Math.round((kcal100 * gramos) / 100);
+  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'código de barras' });
+  document.getElementById('inputCodigoBarras').value = '';
+  document.getElementById('resultadoProducto').innerHTML = '';
+  cerrarModal('modalCodigoBarras');
+}
+
+// Escaneo con BarcodeDetector nativo (si está disponible)
+async function iniciarEscaneo(){
+  if(!('BarcodeDetector' in window)){
+    alert('Este navegador no soporta escaneo nativo. Ingresá el código a mano.');
+    return;
+  }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.setAttribute('playsinline', '');
+    await video.play();
+
+    const detector = new BarcodeDetector({ formats:['ean_13','ean_8','upc_a','upc_e'] });
+    const intervalo = setInterval(async () => {
+      try{
+        const codigos = await detector.detect(video);
+        if(codigos.length > 0){
+          document.getElementById('inputCodigoBarras').value = codigos[0].rawValue;
+          clearInterval(intervalo);
+          stream.getTracks().forEach(t => t.stop());
+          buscarProducto();
+        }
+      }catch(e){ /* frame sin detección, seguir intentando */ }
+    }, 400);
+
+    // Timeout de seguridad: cortar a los 20s si no detectó nada
+    setTimeout(() => {
+      clearInterval(intervalo);
+      stream.getTracks().forEach(t => t.stop());
+    }, 20000);
+  }catch(e){
+    alert('No se pudo acceder a la cámara.');
+    console.error(e);
+  }
+}
+
+// ---------- Foto eventual con Claude ----------
+function redimensionarImagen(file, maxLado=1024, calidad=0.75){
+  return new Promise(async (resolve, reject) => {
+    try{
+      const img = await createImageBitmap(file);
+      let { width, height } = img;
+      if(width > height && width > maxLado){
+        height = Math.round(height * (maxLado / width)); width = maxLado;
+      }else if(height > maxLado){
+        width = Math.round(width * (maxLado / height)); height = maxLado;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(blob => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', calidad);
+    }catch(e){ reject(e); }
+  });
+}
+
+async function identificarFoto(){
+  const input = document.getElementById('inputFoto');
+  const resultadoDiv = document.getElementById('resultadoFoto');
+  if(!input.files[0]){ alert('Elegí o sacá una foto primero.'); return; }
+
+  resultadoDiv.innerHTML = '<p class="aviso">Analizando foto…</p>';
+  try{
+    const base64 = await redimensionarImagen(input.files[0]);
+    // NOTA: implementación de referencia. Requiere API key propia de Anthropic
+    // (expuesta en el cliente, ver conversación sobre proxy si se comparte la app).
+    const apiKey = localStorage.getItem('nutricion_api_key') || prompt('Pegá tu API key de Anthropic:');
+    if(!apiKey){ resultadoDiv.innerHTML = ''; return; }
+    localStorage.setItem('nutricion_api_key', apiKey);
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:600,
+        messages:[{
+          role:'user',
+          content:[
+            { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:base64 } },
+            { type:'text', text:'Identificá los alimentos del plato, estimá gramos y calorías. Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0}],"total_calorias_estimadas":0}' }
+          ]
+        }]
+      })
+    });
+    const data = await resp.json();
+    const texto = data.content.find(b => b.type === 'text')?.text || '{}';
+    const limpio = texto.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(limpio);
+
+    resultadoDiv.innerHTML = `
+      <div class="campo">
+        <label>Estimación (${parsed.total_calorias_estimadas} kcal total)</label>
+        ${parsed.alimentos.map(a => `<p class="detalle">${a.nombre} — ${a.gramos_estimados}g — ${a.calorias} kcal</p>`).join('')}
+      </div>
+      <button class="btn btn-primario" onclick='registrarFoto(${JSON.stringify(parsed)})'>Registrar todo</button>
+    `;
+  }catch(e){
+    resultadoDiv.innerHTML = '<p class="aviso">Error identificando la foto. Revisá la API key.</p>';
+    console.error(e);
+  }
+}
+
+function registrarFoto(parsed){
+  const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
+  agregarAlRegistroHoy({ nombre, kcal: parsed.total_calorias_estimadas, origen:'foto (estimado)' });
+  document.getElementById('inputFoto').value = '';
+  document.getElementById('resultadoFoto').innerHTML = '';
+  cerrarModal('modalFoto');
+}
+
+// ---------- Modales ----------
+function abrirModal(id){
+  const fondo = document.getElementById('fondo' + id.replace('modal',''));
+  if(fondo) fondo.classList.add('activo');
+}
+function cerrarModal(id){
+  const fondo = document.getElementById('fondo' + id.replace('modal',''));
+  if(fondo) fondo.classList.remove('activo');
+}
+
+renderizarTodo();
+</script>
+</body>
+</html>
