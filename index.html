@@ -425,6 +425,18 @@
 </nav>
 
 <script>
+// ---------- Resumen diario compartido (para que Plan de Ciclos lo lea) ----------
+const CLAVE_RESUMEN_COMPARTIDO = 'nutricion_resumen_diario'; // { 'YYYY-MM-DD': {consumido, gastoTotal, balance, proteinasG} }
+
+function escribirResumenDiarioCompartido(consumido, gastoTotal, balance){
+  const acumuladoNutrientes = calcularAcumuladoNutrientesDia();
+  const proteinasG = acumuladoNutrientes['Proteínas'] ? Math.round(acumuladoNutrientes['Proteínas'].valor) : null;
+
+  const resumen = leerJSON(CLAVE_RESUMEN_COMPARTIDO, {});
+  resumen[hoyISO()] = { consumido, gastoTotal, balance, proteinasG };
+  escribirJSON(CLAVE_RESUMEN_COMPARTIDO, resumen);
+}
+
 // ---------- Objetivo de peso ----------
 const CLAVE_OBJETIVO_PESO = 'nutricion_objetivo_peso'; // {pesoObjetivo, ritmoSemanal, fechaInicio, pesoInicial}
 const RITMOS_DISPONIBLES = [0.5, 0.75, 1];
@@ -662,6 +674,8 @@ function renderizarTodo(){
   const elBalance = document.getElementById('balance');
   elBalance.textContent = `${balance >= 0 ? '+' : ''}${balance} kcal`;
   elBalance.className = 'num ' + (balance >= 0 ? 'balance-pos' : 'balance-neg');
+
+  escribirResumenDiarioCompartido(consumido, gastoTotal, balance);
 
   const pct = gastoTotal > 0 ? Math.min(100, Math.round((consumido / gastoTotal) * 100)) : 0;
   document.getElementById('barraProgreso').style.width = pct + '%';
@@ -1123,8 +1137,13 @@ async function seleccionarUSDAPlato(idx){
     seleccionDiv.innerHTML = `
       <div class="campo">
         <label>${food.description}</label>
-        <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía'}</p>
+        <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : '⚠ Sin dato de energía en USDA'}</p>
       </div>
+      ${kcal100 === null ? `
+      <div class="campo">
+        <label>Cargá las calorías/100g a mano</label>
+        <input type="number" id="platoKcalManual" placeholder="kcal / 100g">
+      </div>` : ''}
       <div class="campo">
         <label>Cantidad (gramos) — usá una equivalencia si es medida casera (ej: 1 puño ≈ 30g, 1 cda ≈ 15g)</label>
         <input type="number" id="platoGramos" placeholder="Ej: 30">
@@ -1139,7 +1158,11 @@ async function seleccionarUSDAPlato(idx){
 
 function agregarIngredienteUSDAAlPlato(nombre, kcal100){
   const gramos = parseFloat(document.getElementById('platoGramos').value);
-  if(isNaN(gramos) || kcal100 === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
+  if(kcal100 === null){
+    const manual = document.getElementById('platoKcalManual');
+    kcal100 = manual ? parseFloat(manual.value) : NaN;
+  }
+  if(isNaN(gramos) || isNaN(kcal100)){ alert('Completá los gramos y las calorías (a mano si USDA no las trajo).'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
   const nutrientes = (window._usdaNutrientesPor100gPlato || []).map(n => ({
     nombre: n.nombre,
@@ -1328,7 +1351,12 @@ async function seleccionarUSDA(idx){
         <label>Nombre (editable)</label>
         <input type="text" id="usdaNombreEditable" value="${food.description}">
       </div>
-      <p class="detalle" style="font-weight:700;">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía'}</p>
+      <p class="detalle" style="font-weight:700;">${kcal100 !== null ? kcal100 + ' kcal / 100g' : '⚠ Sin dato de energía en USDA (común en productos "Branded")'}</p>
+      ${kcal100 === null ? `
+      <div class="campo">
+        <label>Cargá las calorías/100g a mano (ej: del paquete)</label>
+        <input type="number" id="usdaKcalManual" placeholder="kcal / 100g">
+      </div>` : ''}
       ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
       ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
       ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
@@ -1348,7 +1376,11 @@ async function seleccionarUSDA(idx){
 function registrarUSDA(kcal100){
   const nombre = document.getElementById('usdaNombreEditable').value.trim();
   const gramos = parseFloat(document.getElementById('usdaGramos').value);
-  if(!nombre || isNaN(gramos) || kcal100 === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+  if(kcal100 === null){
+    const manual = document.getElementById('usdaKcalManual');
+    kcal100 = manual ? parseFloat(manual.value) : NaN;
+  }
+  if(!nombre || isNaN(gramos) || isNaN(kcal100)){ alert('Completá nombre, gramos, y calorías (a mano si USDA no las trajo).'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
 
   const nutrientesEscalados = (window._usdaNutrientesPor100g || []).map(n => ({
