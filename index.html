@@ -777,6 +777,22 @@ function matchValorDiario(nombre, unidad){
   return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
 }
 
+// ---------- Objetivo de proteínas personalizado (según peso de entrenamiento_perfil) ----------
+function obtenerPesoPerfil(){
+  const perfil = leerJSON('entrenamiento_perfil', {});
+  return typeof perfil.pesoKg === 'number' ? perfil.pesoKg : null;
+}
+
+function obtenerFactorProteina(){
+  const guardado = localStorage.getItem('nutricion_factor_proteina');
+  return guardado ? parseFloat(guardado) : 1.6; // g/kg, default razonable para adulto activo 50+
+}
+
+function guardarFactorProteina(valor){
+  localStorage.setItem('nutricion_factor_proteina', valor);
+  renderizarNutrientesDia();
+}
+
 function calcularAcumuladoNutrientesDia(){
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
   const items = registro[hoyISO()] || [];
@@ -789,6 +805,13 @@ function calcularAcumuladoNutrientesDia(){
       acumulado[def.etiqueta].valor += n.valor;
     });
   });
+
+  // Reemplazar el DV genérico de proteínas por uno personalizado (peso × g/kg)
+  const peso = obtenerPesoPerfil();
+  if(peso && acumulado['Proteínas']){
+    acumulado['Proteínas'].dv = Math.round(peso * obtenerFactorProteina());
+  }
+
   return acumulado;
 }
 
@@ -796,11 +819,22 @@ function renderizarNutrientesDia(){
   const acumulado = calcularAcumuladoNutrientesDia();
   const claves = Object.keys(acumulado);
   const contenedor = document.getElementById('contenidoNutrientesDia');
+
+  const peso = obtenerPesoPerfil();
+  const factor = obtenerFactorProteina();
+  const controlProteina = `
+    <div class="campo" style="border-bottom:1px solid var(--borde); padding-bottom:12px; margin-bottom:12px;">
+      <label>Objetivo de proteínas (g por kg de peso corporal)</label>
+      <input type="number" step="0.1" id="inputFactorProteina" value="${factor}" onchange="guardarFactorProteina(this.value)">
+      <p class="detalle">${peso ? `Peso cargado en Plan de Ciclos: ${peso}kg → objetivo ${Math.round(peso*factor)}g/día` : 'No hay peso cargado en Plan de Ciclos (entrenamiento_perfil) — usando 50g genérico hasta que lo cargues ahí.'}</p>
+    </div>
+  `;
+
   if(claves.length === 0){
-    contenedor.innerHTML = '<div class="vacio">Todavía no hay alimentos de USDA registrados hoy.</div>';
+    contenedor.innerHTML = controlProteina + '<div class="vacio">Todavía no hay alimentos de USDA registrados hoy.</div>';
     return;
   }
-  contenedor.innerHTML = claves.sort().map(etiqueta => {
+  contenedor.innerHTML = controlProteina + claves.sort().map(etiqueta => {
     const d = acumulado[etiqueta];
     const pct = Math.round((d.valor / d.dv) * 100);
     const pctBarra = Math.min(100, pct);
