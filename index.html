@@ -140,10 +140,22 @@
     <span class="num" id="totalConsumido">0 kcal</span>
   </div>
   <div class="fila">
-    <span class="etiqueta">Gasto (entrenamiento)</span>
-    <span class="num" id="totalGasto" style="font-size:1.1rem;">0 kcal</span>
+    <span class="etiqueta">Gasto basal (TMB)</span>
+    <span class="num" id="totalTMB" style="font-size:1rem;">0 kcal</span>
   </div>
   <div class="fila">
+    <span class="etiqueta">Gasto por entrenamiento</span>
+    <span class="num" id="totalGasto" style="font-size:1rem;">0 kcal</span>
+  </div>
+  <div class="fila">
+    <span class="etiqueta">Pasos de hoy</span>
+    <input type="number" id="inputPasosHoy" placeholder="Ej: 8000" style="width:100px; text-align:right; padding:4px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" onchange="guardarPasosHoy(this.value)">
+  </div>
+  <div class="fila">
+    <span class="etiqueta">Gasto por pasos (estimado)</span>
+    <span class="num" id="totalPasosKcal" style="font-size:1rem;">0 kcal</span>
+  </div>
+  <div class="fila" style="border-top:1px solid var(--borde); padding-top:8px;">
     <span class="etiqueta">Balance</span>
     <span class="num" id="balance">0 kcal</span>
   </div>
@@ -333,6 +345,11 @@
       <label>API key de USDA FoodData Central</label>
       <input type="text" id="configApiKeyUSDA" placeholder="Sin guardar">
     </div>
+    <div class="campo">
+      <label>Altura (cm) — para calcular el gasto basal (TMB)</label>
+      <input type="number" id="configAltura" placeholder="Ej: 175">
+      <p class="detalle">Peso, edad y sexo se leen de Plan de Ciclos (entrenamiento_perfil) — no hace falta cargarlos acá.</p>
+    </div>
     <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
   </div>
 </div>
@@ -439,6 +456,42 @@ function escribirJSON(clave, valor){
   }
 }
 
+// ---------- Pasos diarios (carga manual) ----------
+const CLAVE_PASOS_DIARIOS = 'nutricion_pasos_diarios'; // { 'YYYY-MM-DD': pasos }
+
+function obtenerPasosHoy(){
+  const registro = leerJSON(CLAVE_PASOS_DIARIOS, {});
+  return registro[hoyISO()] || 0;
+}
+
+function guardarPasosHoy(valor){
+  const pasos = parseInt(valor) || 0;
+  const registro = leerJSON(CLAVE_PASOS_DIARIOS, {});
+  registro[hoyISO()] = pasos;
+  escribirJSON(CLAVE_PASOS_DIARIOS, registro);
+  renderizarTodo();
+}
+
+function calcularKcalPorPasos(pasos){
+  const perfil = leerJSON('entrenamiento_perfil', {});
+  const peso = perfil.pesoKg || 75; // fallback si todavía no hay peso cargado
+  const kcalPorPaso = 0.04 * (peso / 68); // aproximación estándar, ajustada por peso
+  return Math.round(pasos * kcalPorPaso);
+}
+
+// ---------- Gasto basal (TMB) — Mifflin-St Jeor ----------
+function calcularTMB(){
+  const perfil = leerJSON('entrenamiento_perfil', {});
+  const altura = parseFloat(localStorage.getItem('nutricion_altura_cm'));
+  const peso = perfil.pesoKg;
+  const edad = perfil.edad;
+  const sexo = perfil.sexo;
+  if(!peso || !edad || !sexo || !altura) return null;
+
+  const base = 10*peso + 6.25*altura - 5*edad;
+  return Math.round(sexo === 'F' ? base - 161 : base + 5);
+}
+
 // ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
 function calcularGastoHoy(){
   const registro = leerJSON(CLAVE_FORMA, []);
@@ -472,16 +525,23 @@ function renderizarTodo(){
   renderizarChipsCategoria();
 
   const consumido = totalConsumidoHoy();
-  const gasto = calcularGastoHoy();
-  const balance = gasto - consumido;
+  const gastoEntrenamiento = calcularGastoHoy();
+  const tmb = calcularTMB();
+  const pasosHoy = obtenerPasosHoy();
+  const kcalPasos = calcularKcalPorPasos(pasosHoy);
+  const gastoTotal = (tmb || 0) + gastoEntrenamiento + kcalPasos;
+  const balance = gastoTotal - consumido;
 
   document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
-  document.getElementById('totalGasto').textContent = `${gasto} kcal`;
+  document.getElementById('totalTMB').textContent = tmb !== null ? `${tmb} kcal` : 'Cargá altura en ⚙️';
+  document.getElementById('totalGasto').textContent = `${gastoEntrenamiento} kcal`;
+  document.getElementById('inputPasosHoy').value = pasosHoy || '';
+  document.getElementById('totalPasosKcal').textContent = `${kcalPasos} kcal`;
   const elBalance = document.getElementById('balance');
   elBalance.textContent = `${balance >= 0 ? '+' : ''}${balance} kcal`;
   elBalance.className = 'num ' + (balance >= 0 ? 'balance-pos' : 'balance-neg');
 
-  const pct = gasto > 0 ? Math.min(100, Math.round((consumido / gasto) * 100)) : 0;
+  const pct = gastoTotal > 0 ? Math.min(100, Math.round((consumido / gastoTotal) * 100)) : 0;
   document.getElementById('barraProgreso').style.width = pct + '%';
 
   // Lista de hoy
@@ -1312,15 +1372,19 @@ function abrirModal(id){
   if(id === 'modalConfig'){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
     document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
+    document.getElementById('configAltura').value = localStorage.getItem('nutricion_altura_cm') || '';
   }
 }
 
 function guardarConfigKeys(){
   const anthropic = document.getElementById('configApiKeyAnthropic').value.trim();
   const usda = document.getElementById('configApiKeyUSDA').value.trim();
+  const altura = document.getElementById('configAltura').value.trim();
   if(anthropic) localStorage.setItem('nutricion_api_key', anthropic); else localStorage.removeItem('nutricion_api_key');
   if(usda) localStorage.setItem('nutricion_usda_api_key', usda); else localStorage.removeItem('nutricion_usda_api_key');
+  if(altura) localStorage.setItem('nutricion_altura_cm', altura); else localStorage.removeItem('nutricion_altura_cm');
   cerrarModal('modalConfig');
+  renderizarTodo();
 }
 function cerrarModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
