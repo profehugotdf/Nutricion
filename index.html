@@ -50,7 +50,7 @@
   section{margin:20px 16px;}
   section h2{font-size:1.05rem; margin-bottom:10px;}
 
-  .grid-acciones{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
+  .grid-acciones{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .accion{
     background:var(--panel); border:1px solid var(--borde); border-radius:12px;
     padding:14px 8px; text-align:center; cursor:pointer; box-shadow:var(--sombra);
@@ -157,6 +157,10 @@
       <span class="icono">✨</span>
       <span class="txt">Foto (eventual)</span>
     </div>
+    <div class="accion" onclick="abrirModal('modalAlimentoUSDA')">
+      <span class="icono">🌾</span>
+      <span class="txt">Alimento genérico (USDA)</span>
+    </div>
   </div>
 </section>
 
@@ -226,6 +230,40 @@
     <button class="btn btn-primario" onclick="identificarFoto()">Identificar con Claude</button>
     <div id="resultadoFoto"></div>
     <p class="aviso">Reservá esta opción para comidas eventuales — cada foto tiene un costo de API. Para tu rutina diaria usá "Comida guardada".</p>
+  </div>
+</div>
+
+<!-- Modal: alimento genérico USDA -->
+<div class="modal-fondo" id="fondoAlimentoUSDA">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalAlimentoUSDA')">✕</button>
+    <h3>Alimento genérico (USDA)</h3>
+    <div class="campo">
+      <label>Buscar en inglés (ej: "chicken breast raw", "banana")</label>
+      <input type="text" id="inputBusquedaUSDA" placeholder="chicken breast raw">
+    </div>
+    <button class="btn btn-primario" onclick="buscarUSDA()">Buscar</button>
+    <div id="resultadosUSDA"></div>
+    <div id="seleccionUSDA"></div>
+    <p class="aviso">Base de datos oficial de USDA (EE.UU.), gratuita. Los resultados salen en inglés — podés cambiar el nombre antes de registrar.</p>
+  </div>
+</div>
+
+<!-- Modal: editar registro del día -->
+<div class="modal-fondo" id="fondoEditarRegistro">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalEditarRegistro')">✕</button>
+    <h3>Editar registro</h3>
+    <div class="campo">
+      <label>Nombre</label>
+      <input type="text" id="editarNombre">
+    </div>
+    <div class="campo">
+      <label>Calorías (kcal)</label>
+      <input type="number" id="editarKcal">
+    </div>
+    <button class="btn btn-primario" onclick="guardarEdicionRegistro()">Guardar cambios</button>
+    <button class="btn btn-secundario" onclick="borrarRegistro()" style="color:var(--tomate); border-color:var(--tomate);">Eliminar registro</button>
   </div>
 </div>
 
@@ -313,8 +351,8 @@ function renderizarTodo(){
   if(items.length === 0){
     listaHoy.innerHTML = '<div class="vacio">Todavía no registraste comidas hoy.</div>';
   }else{
-    listaHoy.innerHTML = items.map(i => `
-      <div class="comida-item">
+    listaHoy.innerHTML = items.map((i, idx) => `
+      <div class="comida-item" onclick="abrirEdicionRegistro(${idx})">
         <div>
           <div class="nombre">${i.nombre}</div>
           <div class="detalle">${new Date(i.hora).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${i.origen || ''}</div>
@@ -528,6 +566,135 @@ function registrarFoto(parsed){
   document.getElementById('inputFoto').value = '';
   document.getElementById('resultadoFoto').innerHTML = '';
   cerrarModal('modalFoto');
+}
+
+// ---------- Alimento genérico: USDA FoodData Central ----------
+function obtenerApiKeyUSDA(){
+  let key = localStorage.getItem('nutricion_usda_api_key');
+  if(!key){
+    key = prompt('Pegá tu API key de USDA FoodData Central:');
+    if(key) localStorage.setItem('nutricion_usda_api_key', key);
+  }
+  return key;
+}
+
+async function buscarUSDA(){
+  const query = document.getElementById('inputBusquedaUSDA').value.trim();
+  const resultadosDiv = document.getElementById('resultadosUSDA');
+  document.getElementById('seleccionUSDA').innerHTML = '';
+  if(!query){ alert('Escribí qué alimento buscás.'); return; }
+
+  const apiKey = obtenerApiKeyUSDA();
+  if(!apiKey) return;
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${apiKey}&query=${encodeURIComponent(query)}&pageSize=6`);
+    if(resp.status === 403){
+      resultadosDiv.innerHTML = '<p class="aviso">API key inválida. Se borró — probá de nuevo.</p>';
+      localStorage.removeItem('nutricion_usda_api_key');
+      return;
+    }
+    const data = await resp.json();
+    const foods = data.foods || [];
+    if(foods.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados. Probá otro término en inglés.</p>';
+      return;
+    }
+    window._usdaResultados = foods; // cache temporal para no volver a pedir
+    resultadosDiv.innerHTML = foods.map((f, idx) => `
+      <div class="comida-item" onclick="seleccionarUSDA(${idx})">
+        <div>
+          <div class="nombre">${f.description}</div>
+          <div class="detalle">${f.dataType || ''} ${f.brandOwner ? '· '+f.brandOwner : ''}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">Error de conexión con USDA.</p>';
+    console.error(e);
+  }
+}
+
+function seleccionarUSDA(idx){
+  const food = window._usdaResultados[idx];
+  const nutrienteEnergia = (food.foodNutrients || []).find(n =>
+    n.nutrientId === 1008 || n.nutrientName === 'Energy'
+  );
+  const kcal100 = nutrienteEnergia ? Math.round(nutrienteEnergia.value) : null;
+
+  const seleccionDiv = document.getElementById('seleccionUSDA');
+  seleccionDiv.innerHTML = `
+    <div class="campo">
+      <label>Nombre (editable)</label>
+      <input type="text" id="usdaNombreEditable" value="${food.description}">
+    </div>
+    <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía disponible'}</p>
+    <div class="campo">
+      <label>Gramos consumidos</label>
+      <input type="number" id="usdaGramos" placeholder="Ej: 150">
+    </div>
+    <button class="btn btn-primario" onclick="registrarUSDA(${kcal100})">Registrar</button>
+  `;
+}
+
+function registrarUSDA(kcal100){
+  const nombre = document.getElementById('usdaNombreEditable').value.trim();
+  const gramos = parseFloat(document.getElementById('usdaGramos').value);
+  if(!nombre || isNaN(gramos) || kcal100 === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+  const kcal = Math.round((kcal100 * gramos) / 100);
+  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'USDA' });
+  document.getElementById('inputBusquedaUSDA').value = '';
+  document.getElementById('resultadosUSDA').innerHTML = '';
+  document.getElementById('seleccionUSDA').innerHTML = '';
+  cerrarModal('modalAlimentoUSDA');
+}
+
+// ---------- Editar / borrar registro del día ----------
+let idxRegistroEnEdicion = null;
+
+function abrirEdicionRegistro(idx){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[hoyISO()] || [];
+  const item = items[idx];
+  if(!item) return;
+  idxRegistroEnEdicion = idx;
+  document.getElementById('editarNombre').value = item.nombre;
+  document.getElementById('editarKcal').value = item.kcal;
+  abrirModal('modalEditarRegistro');
+}
+
+function guardarEdicionRegistro(){
+  if(idxRegistroEnEdicion === null) return;
+  const nombre = document.getElementById('editarNombre').value.trim();
+  const kcal = parseFloat(document.getElementById('editarKcal').value);
+  if(!nombre || isNaN(kcal)){ alert('Completá nombre y calorías.'); return; }
+
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const hoy = hoyISO();
+  if(registro[hoy] && registro[hoy][idxRegistroEnEdicion]){
+    registro[hoy][idxRegistroEnEdicion].nombre = nombre;
+    registro[hoy][idxRegistroEnEdicion].kcal = kcal;
+    escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
+  }
+  idxRegistroEnEdicion = null;
+  cerrarModal('modalEditarRegistro');
+  renderizarTodo();
+}
+
+function borrarRegistro(){
+  if(idxRegistroEnEdicion === null) return;
+  if(!confirm('¿Eliminar este registro?')) return;
+
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const hoy = hoyISO();
+  if(registro[hoy]){
+    registro[hoy].splice(idxRegistroEnEdicion, 1);
+    escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
+  }
+  idxRegistroEnEdicion = null;
+  cerrarModal('modalEditarRegistro');
+  renderizarTodo();
 }
 
 // ---------- Modales ----------
