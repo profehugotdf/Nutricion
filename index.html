@@ -131,6 +131,7 @@
 <header>
   <h1>Nutrición</h1>
   <p id="fechaHoy"></p>
+  <button class="btn btn-secundario" onclick="abrirModal('modalConfig')" style="margin-top:10px; width:auto; padding:8px 14px; font-size:.8rem;">⚙️ API keys</button>
 </header>
 
 <section class="resumen">
@@ -173,6 +174,10 @@
     <div class="accion" onclick="abrirModal('modalRecientes')">
       <span class="icono">🕐</span>
       <span class="txt">Recientes / frecuentes</span>
+    </div>
+    <div class="accion" onclick="abrirModal('modalArmarPlato')">
+      <span class="icono">🥗</span>
+      <span class="txt">Armar plato (varios ingredientes)</span>
     </div>
   </div>
 </section>
@@ -225,6 +230,11 @@
       <input type="text" id="inputCodigoBarras" placeholder="Ej: 7790070410123" inputmode="numeric">
     </div>
     <button class="btn btn-secundario" id="btnEscanear" onclick="iniciarEscaneo()">Escanear con cámara</button>
+    <div id="visorCamaraCont" style="display:none; margin-top:10px;">
+      <video id="videoEscaneo" playsinline muted style="width:100%; border-radius:10px; background:#000;"></video>
+      <button class="btn btn-secundario" onclick="detenerEscaneo()" style="margin-top:8px;">Cancelar escaneo</button>
+      <p class="aviso" id="avisoEscaneo">Apuntá al código de barras…</p>
+    </div>
     <button class="btn btn-primario" onclick="buscarProducto()">Buscar en Open Food Facts</button>
     <div id="resultadoProducto"></div>
     <p class="aviso">Consulta gratuita a Open Food Facts, sin API key. Si no encuentra el producto, podés cargarlo a mano como comida guardada.</p>
@@ -269,6 +279,61 @@
     <div id="resultadosUSDA"></div>
     <div id="seleccionUSDA"></div>
     <p class="aviso">Base de datos oficial de USDA (EE.UU.), gratuita. Los resultados salen en inglés — podés cambiar el nombre antes de registrar.</p>
+  </div>
+</div>
+
+<!-- Modal: armar plato con varios ingredientes -->
+<div class="modal-fondo" id="fondoArmarPlato">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalArmarPlato')">✕</button>
+    <h3>Armar plato</h3>
+    <p class="aviso">Buscá cada ingrediente en USDA (con su cantidad) y lo vas sumando al plato. Al final le ponés un nombre y lo guardás o lo registrás directo.</p>
+
+    <div class="campo">
+      <label>Buscar ingrediente en USDA (en inglés)</label>
+      <input type="text" id="inputBusquedaPlato" placeholder="lettuce, tomato, avocado…">
+    </div>
+    <button class="btn btn-secundario" onclick="buscarUSDAPlato()">Buscar</button>
+    <div id="resultadosUSDAPlato"></div>
+    <div id="seleccionUSDAPlato"></div>
+
+    <div class="campo" style="margin-top:14px; border-top:1px solid var(--borde); padding-top:14px;">
+      <label>O agregar ingrediente a mano (si no lo encontrás en USDA)</label>
+      <input type="text" id="manualPlatoNombre" placeholder="Nombre, ej: Mayonesa (1 cda)">
+      <input type="number" id="manualPlatoKcal" placeholder="Calorías" style="margin-top:6px;">
+    </div>
+    <button class="btn btn-secundario" onclick="agregarIngredienteManualPlato()">Agregar a mano</button>
+
+    <h3 style="font-size:.95rem; margin-top:18px;">Ingredientes del plato</h3>
+    <div class="lista-comidas" id="listaIngredientesPlato">
+      <div class="vacio">Todavía no agregaste ingredientes.</div>
+    </div>
+    <p class="detalle" style="text-align:right; margin-top:6px; font-weight:700;" id="totalKcalPlato"></p>
+
+    <div class="campo" style="margin-top:14px;">
+      <label>Nombre del plato</label>
+      <input type="text" id="nombrePlatoFinal" placeholder="Ej: Ensalada">
+    </div>
+    <button class="btn btn-secundario" onclick="guardarPlatoComoGuardada()">Guardar como comida guardada</button>
+    <button class="btn btn-primario" onclick="registrarPlatoAhora()">Registrar ahora en Hoy</button>
+  </div>
+</div>
+
+<!-- Modal: configuración de API keys -->
+<div class="modal-fondo" id="fondoConfig">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalConfig')">✕</button>
+    <h3>API keys</h3>
+    <p class="aviso">Guardadas en este dispositivo/navegador únicamente — si abrís la app desde otra URL (ej: local vs GitHub Pages) o desde otro navegador, las va a volver a pedir.</p>
+    <div class="campo">
+      <label>API key de Anthropic (foto)</label>
+      <input type="text" id="configApiKeyAnthropic" placeholder="Sin guardar">
+    </div>
+    <div class="campo">
+      <label>API key de USDA FoodData Central</label>
+      <input type="text" id="configApiKeyUSDA" placeholder="Sin guardar">
+    </div>
+    <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
   </div>
 </div>
 
@@ -459,7 +524,7 @@ function registrarGuardada(idx){
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   const c = guardadas[idx];
   if(!c) return;
-  agregarAlRegistroHoy({ nombre:c.nombre, kcal:c.kcal, prot:c.prot, origen:'guardada' });
+  agregarAlRegistroHoy({ nombre:c.nombre, kcal:c.kcal, prot:c.prot, nutrientes:c.nutrientes || [], origen:'guardada' });
   cerrarModal('modalGuardadas');
 }
 
@@ -523,40 +588,57 @@ function registrarProducto(nombre, kcal100){
 }
 
 // Escaneo con BarcodeDetector nativo (si está disponible)
+let streamEscaneoActivo = null;
+let intervaloEscaneoActivo = null;
+
 async function iniciarEscaneo(){
   if(!('BarcodeDetector' in window)){
-    alert('Este navegador no soporta escaneo nativo. Ingresá el código a mano.');
+    alert('Este navegador no soporta escaneo nativo de código de barras (pasa en algunas versiones de Brave/Chrome Android). Ingresá el código a mano.');
     return;
   }
+
+  const cont = document.getElementById('visorCamaraCont');
+  const video = document.getElementById('videoEscaneo');
+  const aviso = document.getElementById('avisoEscaneo');
+  cont.style.display = 'block';
+  aviso.textContent = 'Pidiendo acceso a la cámara…';
+
   try{
-    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-    const video = document.createElement('video');
-    video.srcObject = stream;
-    video.setAttribute('playsinline', '');
+    streamEscaneoActivo = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
+    video.srcObject = streamEscaneoActivo;
     await video.play();
+    aviso.textContent = 'Apuntá al código de barras…';
 
     const detector = new BarcodeDetector({ formats:['ean_13','ean_8','upc_a','upc_e'] });
-    const intervalo = setInterval(async () => {
+    intervaloEscaneoActivo = setInterval(async () => {
       try{
         const codigos = await detector.detect(video);
         if(codigos.length > 0){
           document.getElementById('inputCodigoBarras').value = codigos[0].rawValue;
-          clearInterval(intervalo);
-          stream.getTracks().forEach(t => t.stop());
+          detenerEscaneo();
           buscarProducto();
         }
       }catch(e){ /* frame sin detección, seguir intentando */ }
     }, 400);
 
-    // Timeout de seguridad: cortar a los 20s si no detectó nada
-    setTimeout(() => {
-      clearInterval(intervalo);
-      stream.getTracks().forEach(t => t.stop());
-    }, 20000);
   }catch(e){
-    alert('No se pudo acceder a la cámara.');
     console.error(e);
+    if(e.name === 'NotAllowedError'){
+      aviso.textContent = 'Permiso de cámara denegado. Revisá los permisos del sitio en Brave (ícono de info junto a la URL) y volvé a intentar.';
+    }else if(e.name === 'NotFoundError'){
+      aviso.textContent = 'No se encontró ninguna cámara en el dispositivo.';
+    }else{
+      aviso.textContent = 'No se pudo acceder a la cámara: ' + e.message;
+    }
   }
+}
+
+function detenerEscaneo(){
+  if(intervaloEscaneoActivo) clearInterval(intervaloEscaneoActivo);
+  if(streamEscaneoActivo) streamEscaneoActivo.getTracks().forEach(t => t.stop());
+  streamEscaneoActivo = null;
+  intervaloEscaneoActivo = null;
+  document.getElementById('visorCamaraCont').style.display = 'none';
 }
 
 // ---------- Foto eventual con Claude ----------
@@ -732,6 +814,179 @@ function renderizarNutrientesDia(){
       </div>
     `;
   }).join('');
+}
+
+// ---------- Armar plato (varios ingredientes) ----------
+let platoEnConstruccion = []; // [{nombre, gramos, kcal, nutrientes}]
+
+async function buscarUSDAPlato(){
+  const query = document.getElementById('inputBusquedaPlato').value.trim();
+  const resultadosDiv = document.getElementById('resultadosUSDAPlato');
+  document.getElementById('seleccionUSDAPlato').innerHTML = '';
+  if(!query){ alert('Escribí qué ingrediente buscás.'); return; }
+
+  const apiKey = obtenerApiKeyUSDA();
+  if(!apiKey) return;
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${apiKey}&query=${encodeURIComponent(query)}&pageSize=6`);
+    if(resp.status === 403){
+      resultadosDiv.innerHTML = '<p class="aviso">API key inválida.</p>';
+      localStorage.removeItem('nutricion_usda_api_key');
+      return;
+    }
+    const data = await resp.json();
+    const foods = data.foods || [];
+    if(foods.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados. Probá otro término, o agregalo a mano abajo.</p>';
+      return;
+    }
+    window._usdaResultadosPlato = foods;
+    resultadosDiv.innerHTML = foods.map((f, idx) => `
+      <div class="comida-item" onclick="seleccionarUSDAPlato(${idx})">
+        <div>
+          <div class="nombre">${f.description}</div>
+          <div class="detalle">${f.dataType || ''} ${f.brandOwner ? '· '+f.brandOwner : ''}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">Error de conexión con USDA.</p>';
+    console.error(e);
+  }
+}
+
+async function seleccionarUSDAPlato(idx){
+  const food = window._usdaResultadosPlato[idx];
+  const seleccionDiv = document.getElementById('seleccionUSDAPlato');
+  seleccionDiv.innerHTML = '<p class="aviso">Cargando…</p>';
+
+  const apiKey = obtenerApiKeyUSDA();
+  if(!apiKey) return;
+
+  try{
+    const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/food/${food.fdcId}?api_key=${apiKey}`);
+    const detalle = await resp.json();
+    const lista = (detalle.foodNutrients || []).map(fn => ({
+      nombre: fn.nutrient?.name || fn.nutrientName || 'Desconocido',
+      valor: fn.amount ?? fn.value ?? null,
+      unidad: fn.nutrient?.unitName || fn.unitName || ''
+    })).filter(n => n.valor !== null);
+
+    window._usdaNutrientesPor100gPlato = lista;
+    const energia = lista.find(n => n.nombre.toLowerCase() === 'energy' && n.unidad.toLowerCase() === 'kcal');
+    const kcal100 = energia ? Math.round(energia.valor) : null;
+
+    seleccionDiv.innerHTML = `
+      <div class="campo">
+        <label>${food.description}</label>
+        <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía'}</p>
+      </div>
+      <div class="campo">
+        <label>Cantidad (gramos) — usá una equivalencia si es medida casera (ej: 1 puño ≈ 30g, 1 cda ≈ 15g)</label>
+        <input type="number" id="platoGramos" placeholder="Ej: 30">
+      </div>
+      <button class="btn btn-primario" onclick='agregarIngredienteUSDAAlPlato(${JSON.stringify(food.description)}, ${kcal100})'>Agregar al plato</button>
+    `;
+  }catch(e){
+    seleccionDiv.innerHTML = '<p class="aviso">Error trayendo el detalle.</p>';
+    console.error(e);
+  }
+}
+
+function agregarIngredienteUSDAAlPlato(nombre, kcal100){
+  const gramos = parseFloat(document.getElementById('platoGramos').value);
+  if(isNaN(gramos) || kcal100 === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
+  const kcal = Math.round((kcal100 * gramos) / 100);
+  const nutrientes = (window._usdaNutrientesPor100gPlato || []).map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  }));
+  platoEnConstruccion.push({ nombre: `${nombre} (${gramos}g)`, kcal, nutrientes });
+  document.getElementById('inputBusquedaPlato').value = '';
+  document.getElementById('resultadosUSDAPlato').innerHTML = '';
+  document.getElementById('seleccionUSDAPlato').innerHTML = '';
+  renderizarIngredientesPlato();
+}
+
+function agregarIngredienteManualPlato(){
+  const nombre = document.getElementById('manualPlatoNombre').value.trim();
+  const kcal = parseFloat(document.getElementById('manualPlatoKcal').value);
+  if(!nombre || isNaN(kcal)){ alert('Completá nombre y calorías.'); return; }
+  platoEnConstruccion.push({ nombre, kcal, nutrientes:[] });
+  document.getElementById('manualPlatoNombre').value = '';
+  document.getElementById('manualPlatoKcal').value = '';
+  renderizarIngredientesPlato();
+}
+
+function quitarIngredientePlato(idx){
+  platoEnConstruccion.splice(idx, 1);
+  renderizarIngredientesPlato();
+}
+
+function renderizarIngredientesPlato(){
+  const lista = document.getElementById('listaIngredientesPlato');
+  const totalDiv = document.getElementById('totalKcalPlato');
+  if(platoEnConstruccion.length === 0){
+    lista.innerHTML = '<div class="vacio">Todavía no agregaste ingredientes.</div>';
+    totalDiv.textContent = '';
+    return;
+  }
+  lista.innerHTML = platoEnConstruccion.map((i, idx) => `
+    <div class="comida-item" onclick="quitarIngredientePlato(${idx})">
+      <div>
+        <div class="nombre">${i.nombre}</div>
+        <div class="detalle">tocá para quitar</div>
+      </div>
+      <div class="kcal">${i.kcal} kcal</div>
+    </div>
+  `).join('');
+  const total = platoEnConstruccion.reduce((acc, i) => acc + i.kcal, 0);
+  totalDiv.textContent = `Total: ${total} kcal`;
+}
+
+function fusionarNutrientesPlato(){
+  const acumulado = {};
+  platoEnConstruccion.forEach(ing => {
+    (ing.nutrientes || []).forEach(n => {
+      if(!acumulado[n.nombre]) acumulado[n.nombre] = { nombre:n.nombre, valor:0, unidad:n.unidad };
+      acumulado[n.nombre].valor += n.valor;
+    });
+  });
+  return Object.values(acumulado).map(n => ({ ...n, valor: Math.round(n.valor * 100) / 100 }));
+}
+
+function armarObjetoPlatoFinal(){
+  const nombre = document.getElementById('nombrePlatoFinal').value.trim();
+  if(!nombre){ alert('Ponele un nombre al plato.'); return null; }
+  if(platoEnConstruccion.length === 0){ alert('Agregá al menos un ingrediente.'); return null; }
+  const kcal = platoEnConstruccion.reduce((acc, i) => acc + i.kcal, 0);
+  return { nombre, kcal, nutrientes: fusionarNutrientesPlato() };
+}
+
+function guardarPlatoComoGuardada(){
+  const plato = armarObjetoPlatoFinal();
+  if(!plato) return;
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  guardadas.push(plato);
+  escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
+  platoEnConstruccion = [];
+  document.getElementById('nombrePlatoFinal').value = '';
+  renderizarIngredientesPlato();
+  cerrarModal('modalArmarPlato');
+  renderizarTodo();
+}
+
+function registrarPlatoAhora(){
+  const plato = armarObjetoPlatoFinal();
+  if(!plato) return;
+  agregarAlRegistroHoy({ ...plato, origen:'plato armado' });
+  platoEnConstruccion = [];
+  document.getElementById('nombrePlatoFinal').value = '';
+  renderizarIngredientesPlato();
+  cerrarModal('modalArmarPlato');
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
@@ -1020,10 +1275,23 @@ function abrirModal(id){
   if(fondo) fondo.classList.add('activo');
   if(id === 'modalNutrientesDia') renderizarNutrientesDia();
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
+  if(id === 'modalConfig'){
+    document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
+    document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
+  }
+}
+
+function guardarConfigKeys(){
+  const anthropic = document.getElementById('configApiKeyAnthropic').value.trim();
+  const usda = document.getElementById('configApiKeyUSDA').value.trim();
+  if(anthropic) localStorage.setItem('nutricion_api_key', anthropic); else localStorage.removeItem('nutricion_api_key');
+  if(usda) localStorage.setItem('nutricion_usda_api_key', usda); else localStorage.removeItem('nutricion_usda_api_key');
+  cerrarModal('modalConfig');
 }
 function cerrarModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
   if(fondo) fondo.classList.remove('activo');
+  if(id === 'modalCodigoBarras') detenerEscaneo();
 }
 
 renderizarTodo();
