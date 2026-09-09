@@ -159,8 +159,13 @@
     <span class="etiqueta">Balance</span>
     <span class="num" id="balance">0 kcal</span>
   </div>
+  <div class="fila" id="filaObjetivoCalorias" style="display:none;">
+    <span class="etiqueta">Objetivo de hoy (con déficit)</span>
+    <span class="num" id="objetivoCaloriasHoy" style="font-size:1rem;">—</span>
+  </div>
   <div class="barra"><div id="barraProgreso" style="width:0%;"></div></div>
   <button class="btn btn-secundario" onclick="abrirModal('modalNutrientesDia')" style="margin-top:14px;">Ver % de nutrientes del día</button>
+  <button class="btn btn-secundario" onclick="abrirModal('modalObjetivoPeso')" style="margin-top:8px;">🎯 Objetivo de peso</button>
 </section>
 
 <section>
@@ -294,6 +299,23 @@
   </div>
 </div>
 
+<!-- Modal: objetivo de peso -->
+<div class="modal-fondo" id="fondoObjetivoPeso">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalObjetivoPeso')">✕</button>
+    <h3>Objetivo de peso</h3>
+    <div class="campo">
+      <label>Peso objetivo (kg)</label>
+      <input type="number" id="inputPesoObjetivo" placeholder="Ej: 80">
+    </div>
+    <label style="display:block; font-size:.78rem; color:var(--tinta-suave); margin-bottom:6px;">Ritmo de descenso</label>
+    <div class="chips" id="chipsRitmo"></div>
+    <button class="btn btn-primario" onclick="guardarObjetivoPeso()">Guardar objetivo</button>
+    <button class="btn btn-secundario" onclick="borrarObjetivoPeso()" style="margin-top:8px;">Quitar objetivo</button>
+    <div id="resumenObjetivoPeso" style="margin-top:16px;"></div>
+  </div>
+</div>
+
 <!-- Modal: armar plato con varios ingredientes -->
 <div class="modal-fondo" id="fondoArmarPlato">
   <div class="modal">
@@ -403,6 +425,106 @@
 </nav>
 
 <script>
+// ---------- Objetivo de peso ----------
+const CLAVE_OBJETIVO_PESO = 'nutricion_objetivo_peso'; // {pesoObjetivo, ritmoSemanal, fechaInicio, pesoInicial}
+const RITMOS_DISPONIBLES = [0.5, 0.75, 1];
+let ritmoSeleccionado = 0.5;
+
+function obtenerObjetivoPeso(){
+  return leerJSON(CLAVE_OBJETIVO_PESO, null);
+}
+
+function renderizarChipsRitmo(){
+  const cont = document.getElementById('chipsRitmo');
+  cont.innerHTML = RITMOS_DISPONIBLES.map(r => `
+    <button class="chip ${r === ritmoSeleccionado ? 'activo' : ''}" onclick="seleccionarRitmo(${r})">${r} kg/semana</button>
+  `).join('');
+}
+
+function seleccionarRitmo(r){
+  ritmoSeleccionado = r;
+  renderizarChipsRitmo();
+}
+
+function guardarObjetivoPeso(){
+  const pesoObjetivo = parseFloat(document.getElementById('inputPesoObjetivo').value);
+  if(isNaN(pesoObjetivo)){ alert('Ingresá un peso objetivo.'); return; }
+  const perfil = leerJSON('entrenamiento_perfil', {});
+  const pesoInicial = perfil.pesoKg || null;
+
+  escribirJSON(CLAVE_OBJETIVO_PESO, {
+    pesoObjetivo,
+    ritmoSemanal: ritmoSeleccionado,
+    fechaInicio: hoyISO(),
+    pesoInicial
+  });
+  renderizarObjetivoPeso();
+  renderizarTodo();
+}
+
+function borrarObjetivoPeso(){
+  localStorage.removeItem(CLAVE_OBJETIVO_PESO);
+  document.getElementById('inputPesoObjetivo').value = '';
+  renderizarObjetivoPeso();
+  renderizarTodo();
+}
+
+function calcularDeficitDiarioObjetivo(){
+  const objetivo = obtenerObjetivoPeso();
+  if(!objetivo) return null;
+  const perfil = leerJSON('entrenamiento_perfil', {});
+  const pesoActual = perfil.pesoKg || objetivo.pesoInicial;
+  if(!pesoActual) return null;
+
+  const kgAbajar = pesoActual - objetivo.pesoObjetivo;
+  if(kgAbajar <= 0) return { completado:true, kgAbajar };
+
+  const deficitDiario = Math.round((objetivo.ritmoSemanal * 7700) / 7);
+  const semanasEstimadas = Math.round((kgAbajar / objetivo.ritmoSemanal) * 10) / 10;
+  const fechaEstimada = new Date();
+  fechaEstimada.setDate(fechaEstimada.getDate() + Math.round(semanasEstimadas * 7));
+
+  return { deficitDiario, kgAbajar, semanasEstimadas, fechaEstimada, pesoActual, completado:false };
+}
+
+function renderizarObjetivoPeso(){
+  renderizarChipsRitmo();
+  const objetivo = obtenerObjetivoPeso();
+  const resumenDiv = document.getElementById('resumenObjetivoPeso');
+  if(!objetivo){
+    resumenDiv.innerHTML = '';
+    return;
+  }
+  document.getElementById('inputPesoObjetivo').value = objetivo.pesoObjetivo;
+  ritmoSeleccionado = objetivo.ritmoSemanal;
+  renderizarChipsRitmo();
+
+  const plan = calcularDeficitDiarioObjetivo();
+  if(!plan){
+    resumenDiv.innerHTML = '<p class="aviso">Falta el peso actual en Plan de Ciclos (entrenamiento_perfil) para calcular el plan.</p>';
+    return;
+  }
+  if(plan.completado){
+    resumenDiv.innerHTML = '<p class="aviso">¡Objetivo alcanzado! Peso actual ya está en o por debajo del objetivo.</p>';
+    return;
+  }
+
+  const factorSugerido = 2.0;
+  resumenDiv.innerHTML = `
+    <div class="campo">
+      <label>Plan</label>
+      <p class="detalle">Peso actual: ${plan.pesoActual}kg → objetivo: ${objetivo.pesoObjetivo}kg (${plan.kgAbajar.toFixed(1)}kg a bajar)</p>
+      <p class="detalle">Déficit diario objetivo: <b>${plan.deficitDiario} kcal</b></p>
+      <p class="detalle">Tiempo estimado: ~${plan.semanasEstimadas} semanas (fecha aprox: ${plan.fechaEstimada.toLocaleDateString('es-AR')})</p>
+    </div>
+    <div class="aviso">
+      Recomendación: con déficit activo conviene subir la proteína a ~${factorSugerido}g/kg para preservar masa muscular.
+      <button class="btn btn-secundario" onclick="guardarFactorProteina(${factorSugerido}); alert('Objetivo de proteína actualizado a ${factorSugerido}g/kg.')" style="margin-top:8px;">Aplicar ${factorSugerido}g/kg ahora</button>
+    </div>
+    <p class="aviso">Este plan es una estimación general (regla de 7700 kcal/kg de grasa), no reemplaza la evaluación de un nutricionista — sobre todo si el déficit se sostiene varias semanas.</p>
+  `;
+}
+
 // ---------- Categoría de la comida (Desayuno/Almuerzo/Merienda/Cena/Snack) ----------
 const CATEGORIAS = ['Desayuno','Almuerzo','Merienda','Cena','Snack'];
 
@@ -543,6 +665,18 @@ function renderizarTodo(){
 
   const pct = gastoTotal > 0 ? Math.min(100, Math.round((consumido / gastoTotal) * 100)) : 0;
   document.getElementById('barraProgreso').style.width = pct + '%';
+
+  const filaObjetivo = document.getElementById('filaObjetivoCalorias');
+  const plan = calcularDeficitDiarioObjetivo();
+  if(plan && !plan.completado){
+    filaObjetivo.style.display = 'flex';
+    const objetivoKcal = gastoTotal - plan.deficitDiario;
+    const restante = objetivoKcal - consumido;
+    document.getElementById('objetivoCaloriasHoy').textContent =
+      `${objetivoKcal} kcal (${restante >= 0 ? 'quedan '+restante : 'te pasaste '+Math.abs(restante)})`;
+  }else{
+    filaObjetivo.style.display = 'none';
+  }
 
   // Lista de hoy
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
@@ -894,17 +1028,31 @@ function renderizarNutrientesDia(){
     contenedor.innerHTML = controlProteina + '<div class="vacio">Todavía no hay alimentos de USDA registrados hoy.</div>';
     return;
   }
-  contenedor.innerHTML = controlProteina + claves.sort().map(etiqueta => {
+
+  const bajos = claves.filter(et => Math.round((acumulado[et].valor / acumulado[et].dv) * 100) < 50);
+  const NUTRIENTES_SENSIBLES = ['Vitamina A','Vitamina D','Vitamina E','Vitamina K','Hierro'];
+  const bajosSensibles = bajos.filter(et => NUTRIENTES_SENSIBLES.includes(et));
+
+  const resumenBajos = bajos.length === 0 ? '' : `
+    <div class="aviso" style="background:#3A2A22; color:#E8C9B8;">
+      ⚠ Por debajo del 50% hoy: <b>${bajos.join(', ')}</b>.
+      Esto es una estimación dietaria, no un diagnóstico — para confirmar si realmente falta algo hace falta un análisis de sangre, sobre todo si se repite varios días seguidos.
+      ${bajosSensibles.length > 0 ? `<br><br>Ojo en particular con <b>${bajosSensibles.join(', ')}</b>: son de las que conviene confirmar con análisis antes de suplementar — el exceso sostenido de vitaminas liposolubles (A/D/E/K) se acumula en el cuerpo, y el de hierro es difícil de eliminar y puede ser dañino.` : ''}
+    </div>
+  `;
+
+  contenedor.innerHTML = controlProteina + resumenBajos + claves.sort().map(etiqueta => {
     const d = acumulado[etiqueta];
     const pct = Math.round((d.valor / d.dv) * 100);
     const pctBarra = Math.min(100, pct);
+    const color = pct >= 100 ? 'var(--oliva)' : (pct < 50 ? 'var(--tomate)' : 'var(--mostaza)');
     return `
       <div class="campo">
         <div class="fila" style="margin-bottom:4px;">
-          <span class="etiqueta">${etiqueta}</span>
+          <span class="etiqueta">${pct < 50 ? '⚠ ' : ''}${etiqueta}</span>
           <span class="detalle">${Math.round(d.valor*10)/10}${d.unidad} de ${d.dv}${d.unidad} — ${pct}%</span>
         </div>
-        <div class="barra"><div style="width:${pctBarra}%; background:${pct >= 100 ? 'var(--oliva)' : 'var(--mostaza)'};"></div></div>
+        <div class="barra"><div style="width:${pctBarra}%; background:${color};"></div></div>
       </div>
     `;
   }).join('');
@@ -1369,6 +1517,7 @@ function abrirModal(id){
   if(fondo) fondo.classList.add('activo');
   if(id === 'modalNutrientesDia') renderizarNutrientesDia();
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
+  if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalConfig'){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
     document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
