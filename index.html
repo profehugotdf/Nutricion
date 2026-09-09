@@ -254,6 +254,7 @@
   <div class="modal">
     <button class="btn-cerrar" onclick="cerrarModal('modalEditarRegistro')">✕</button>
     <h3>Editar registro</h3>
+    <div id="panelNutrientesRegistro"></div>
     <div class="campo">
       <label>Nombre</label>
       <input type="text" id="editarNombre">
@@ -616,26 +617,70 @@ async function buscarUSDA(){
   }
 }
 
-function seleccionarUSDA(idx){
-  const food = window._usdaResultados[idx];
-  const nutrienteEnergia = (food.foodNutrients || []).find(n =>
-    n.nutrientId === 1008 || n.nutrientName === 'Energy'
-  );
-  const kcal100 = nutrienteEnergia ? Math.round(nutrienteEnergia.value) : null;
+function categorizarNutriente(nombre){
+  const n = nombre.toLowerCase();
+  if(n.includes('vitamin')) return 'vitaminas';
+  const minerales = ['calcium','iron','potassium','sodium','zinc','magnesium','phosphorus','copper','manganese','selenium','fluoride'];
+  if(minerales.some(m => n.includes(m))) return 'minerales';
+  const macros = ['energy','protein','total lipid','fatty acid','carbohydrate','fiber','sugars','water','ash','cholesterol'];
+  if(macros.some(m => n.includes(m))) return 'macros';
+  return 'otros';
+}
 
+async function seleccionarUSDA(idx){
+  const food = window._usdaResultados[idx];
   const seleccionDiv = document.getElementById('seleccionUSDA');
-  seleccionDiv.innerHTML = `
-    <div class="campo">
-      <label>Nombre (editable)</label>
-      <input type="text" id="usdaNombreEditable" value="${food.description}">
-    </div>
-    <p class="detalle">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía disponible'}</p>
-    <div class="campo">
-      <label>Gramos consumidos</label>
-      <input type="number" id="usdaGramos" placeholder="Ej: 150">
-    </div>
-    <button class="btn btn-primario" onclick="registrarUSDA(${kcal100})">Registrar</button>
-  `;
+  seleccionDiv.innerHTML = '<p class="aviso">Cargando panel completo de nutrientes…</p>';
+
+  const apiKey = obtenerApiKeyUSDA();
+  if(!apiKey) return;
+
+  try{
+    const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/food/${food.fdcId}?api_key=${apiKey}`);
+    const detalle = await resp.json();
+
+    // Normalizar: distintos data types devuelven la forma del nutriente distinto
+    const lista = (detalle.foodNutrients || []).map(fn => ({
+      nombre: fn.nutrient?.name || fn.nutrientName || 'Desconocido',
+      valor: fn.amount ?? fn.value ?? null,
+      unidad: fn.nutrient?.unitName || fn.unitName || ''
+    })).filter(n => n.valor !== null);
+
+    window._usdaNutrientesPor100g = lista;
+
+    const energia = lista.find(n => n.nombre.toLowerCase() === 'energy' && n.unidad.toLowerCase() === 'kcal');
+    const kcal100 = energia ? Math.round(energia.valor) : null;
+
+    const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+    lista.forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+
+    const renderGrupo = (titulo, items) => items.length === 0 ? '' : `
+      <div class="campo">
+        <label>${titulo}</label>
+        ${items.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
+      </div>
+    `;
+
+    seleccionDiv.innerHTML = `
+      <div class="campo">
+        <label>Nombre (editable)</label>
+        <input type="text" id="usdaNombreEditable" value="${food.description}">
+      </div>
+      <p class="detalle" style="font-weight:700;">${kcal100 !== null ? kcal100 + ' kcal / 100g' : 'Sin dato de energía'}</p>
+      ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
+      ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
+      ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
+      ${renderGrupo('Otros (por 100g)', grupos.otros)}
+      <div class="campo">
+        <label>Gramos consumidos</label>
+        <input type="number" id="usdaGramos" placeholder="Ej: 150">
+      </div>
+      <button class="btn btn-primario" onclick="registrarUSDA(${kcal100})">Registrar</button>
+    `;
+  }catch(e){
+    seleccionDiv.innerHTML = '<p class="aviso">Error trayendo el detalle del alimento.</p>';
+    console.error(e);
+  }
 }
 
 function registrarUSDA(kcal100){
@@ -643,7 +688,20 @@ function registrarUSDA(kcal100){
   const gramos = parseFloat(document.getElementById('usdaGramos').value);
   if(!nombre || isNaN(gramos) || kcal100 === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
-  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'USDA' });
+
+  const nutrientesEscalados = (window._usdaNutrientesPor100g || []).map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  }));
+
+  agregarAlRegistroHoy({
+    nombre: `${nombre} (${gramos}g)`,
+    kcal,
+    origen:'USDA',
+    nutrientes: nutrientesEscalados
+  });
+
   document.getElementById('inputBusquedaUSDA').value = '';
   document.getElementById('resultadosUSDA').innerHTML = '';
   document.getElementById('seleccionUSDA').innerHTML = '';
@@ -661,6 +719,25 @@ function abrirEdicionRegistro(idx){
   idxRegistroEnEdicion = idx;
   document.getElementById('editarNombre').value = item.nombre;
   document.getElementById('editarKcal').value = item.kcal;
+
+  const panelDiv = document.getElementById('panelNutrientesRegistro');
+  if(item.nutrientes && item.nutrientes.length > 0){
+    const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+    item.nutrientes.forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+    const renderGrupo = (titulo, items2) => items2.length === 0 ? '' : `
+      <div class="campo">
+        <label>${titulo}</label>
+        ${items2.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
+      </div>
+    `;
+    panelDiv.innerHTML = renderGrupo('Macronutrientes', grupos.macros)
+      + renderGrupo('Vitaminas', grupos.vitaminas)
+      + renderGrupo('Minerales', grupos.minerales)
+      + renderGrupo('Otros', grupos.otros);
+  }else{
+    panelDiv.innerHTML = '';
+  }
+
   abrirModal('modalEditarRegistro');
 }
 
