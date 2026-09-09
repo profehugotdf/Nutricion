@@ -140,6 +140,7 @@
     <span class="num" id="balance">0 kcal</span>
   </div>
   <div class="barra"><div id="barraProgreso" style="width:0%;"></div></div>
+  <button class="btn btn-secundario" onclick="abrirModal('modalNutrientesDia')" style="margin-top:14px;">Ver % de nutrientes del día</button>
 </section>
 
 <section>
@@ -230,6 +231,16 @@
     <button class="btn btn-primario" onclick="identificarFoto()">Identificar con Claude</button>
     <div id="resultadoFoto"></div>
     <p class="aviso">Reservá esta opción para comidas eventuales — cada foto tiene un costo de API. Para tu rutina diaria usá "Comida guardada".</p>
+  </div>
+</div>
+
+<!-- Modal: % de nutrientes del día -->
+<div class="modal-fondo" id="fondoNutrientesDia">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalNutrientesDia')">✕</button>
+    <h3>% de requerimientos diarios</h3>
+    <p class="aviso">Referencia genérica de adulto (valores diarios FDA, dieta de 2000 kcal) — no ajustada a tu edad/sexo/peso. Solo suma los alimentos registrados vía USDA, que son los que traen panel completo de nutrientes.</p>
+    <div id="contenidoNutrientesDia"></div>
   </div>
 </div>
 
@@ -538,7 +549,7 @@ async function identificarFoto(){
           role:'user',
           content:[
             { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:base64 } },
-            { type:'text', text:'Identificá los alimentos del plato, estimá gramos y calorías. Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0}],"total_calorias_estimadas":0}' }
+            { type:'text', text:'Identificá los alimentos del plato, estimá gramos, calorías y macronutrientes (proteínas, grasas, carbohidratos en gramos). Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total_calorias_estimadas":0,"total_proteinas_g":0,"total_grasas_g":0,"total_carbohidratos_g":0}' }
           ]
         }]
       })
@@ -552,6 +563,7 @@ async function identificarFoto(){
       <div class="campo">
         <label>Estimación (${parsed.total_calorias_estimadas} kcal total)</label>
         ${parsed.alimentos.map(a => `<p class="detalle">${a.nombre} — ${a.gramos_estimados}g — ${a.calorias} kcal</p>`).join('')}
+        <p class="detalle" style="margin-top:6px;">Proteínas: ${parsed.total_proteinas_g ?? '?'}g · Grasas: ${parsed.total_grasas_g ?? '?'}g · Carbohidratos: ${parsed.total_carbohidratos_g ?? '?'}g (estimado)</p>
       </div>
       <button class="btn btn-primario" onclick='registrarFoto(${JSON.stringify(parsed)})'>Registrar todo</button>
     `;
@@ -563,10 +575,100 @@ async function identificarFoto(){
 
 function registrarFoto(parsed){
   const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
-  agregarAlRegistroHoy({ nombre, kcal: parsed.total_calorias_estimadas, origen:'foto (estimado)' });
+
+  const nutrientesEstimados = [];
+  if(typeof parsed.total_proteinas_g === 'number')
+    nutrientesEstimados.push({ nombre:'Protein (estimado por foto)', valor:parsed.total_proteinas_g, unidad:'g' });
+  if(typeof parsed.total_grasas_g === 'number')
+    nutrientesEstimados.push({ nombre:'Total lipid (estimado por foto)', valor:parsed.total_grasas_g, unidad:'g' });
+  if(typeof parsed.total_carbohidratos_g === 'number')
+    nutrientesEstimados.push({ nombre:'Carbohydrate, by difference (estimado por foto)', valor:parsed.total_carbohidratos_g, unidad:'g' });
+
+  agregarAlRegistroHoy({
+    nombre,
+    kcal: parsed.total_calorias_estimadas,
+    origen:'foto (estimado)',
+    nutrientes: nutrientesEstimados
+  });
   document.getElementById('inputFoto').value = '';
   document.getElementById('resultadoFoto').innerHTML = '';
   cerrarModal('modalFoto');
+}
+
+// ---------- % de requerimientos diarios (referencia FDA, adulto, 2000 kcal) ----------
+const TABLA_VALORES_DIARIOS = [
+  { match:['vitamin b-12','vitamin b12','cobalamin'], etiqueta:'Vitamina B12', dv:2.4, unidad:'µg' },
+  { match:['vitamin b-6','vitamin b6'], etiqueta:'Vitamina B6', dv:1.7, unidad:'mg' },
+  { match:['folate'], etiqueta:'Folato', dv:400, unidad:'µg' },
+  { match:['niacin'], etiqueta:'Niacina (B3)', dv:16, unidad:'mg' },
+  { match:['riboflavin'], etiqueta:'Riboflavina (B2)', dv:1.3, unidad:'mg' },
+  { match:['thiamin'], etiqueta:'Tiamina (B1)', dv:1.2, unidad:'mg' },
+  { match:['pantothenic'], etiqueta:'Ácido pantoténico (B5)', dv:5, unidad:'mg' },
+  { match:['vitamin a, rae','vitamin a rae'], etiqueta:'Vitamina A', dv:900, unidad:'µg' },
+  { match:['vitamin c'], etiqueta:'Vitamina C', dv:90, unidad:'mg' },
+  { match:['vitamin d'], etiqueta:'Vitamina D', dv:20, unidad:'µg' },
+  { match:['vitamin e'], etiqueta:'Vitamina E', dv:15, unidad:'mg' },
+  { match:['vitamin k'], etiqueta:'Vitamina K', dv:120, unidad:'µg' },
+  { match:['calcium'], etiqueta:'Calcio', dv:1300, unidad:'mg' },
+  { match:['iron'], etiqueta:'Hierro', dv:18, unidad:'mg' },
+  { match:['magnesium'], etiqueta:'Magnesio', dv:420, unidad:'mg' },
+  { match:['phosphorus'], etiqueta:'Fósforo', dv:1250, unidad:'mg' },
+  { match:['potassium'], etiqueta:'Potasio', dv:4700, unidad:'mg' },
+  { match:['sodium'], etiqueta:'Sodio', dv:2300, unidad:'mg' },
+  { match:['zinc'], etiqueta:'Zinc', dv:11, unidad:'mg' },
+  { match:['copper'], etiqueta:'Cobre', dv:0.9, unidad:'mg' },
+  { match:['manganese'], etiqueta:'Manganeso', dv:2.3, unidad:'mg' },
+  { match:['selenium'], etiqueta:'Selenio', dv:55, unidad:'µg' },
+  { match:['fiber'], etiqueta:'Fibra', dv:28, unidad:'g' },
+  { match:['protein'], etiqueta:'Proteínas', dv:50, unidad:'g' },
+  { match:['total lipid'], etiqueta:'Grasas totales', dv:78, unidad:'g' },
+  { match:['carbohydrate, by difference','carbohydrate'], etiqueta:'Carbohidratos', dv:275, unidad:'g' },
+  { match:['cholesterol'], etiqueta:'Colesterol', dv:300, unidad:'mg' },
+];
+
+function matchValorDiario(nombre, unidad){
+  if(unidad === 'IU') return null; // evita duplicar con la versión en µg/mg del mismo nutriente
+  const n = nombre.toLowerCase();
+  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
+}
+
+function calcularAcumuladoNutrientesDia(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[hoyISO()] || [];
+  const acumulado = {};
+  items.forEach(item => {
+    (item.nutrientes || []).forEach(n => {
+      const def = matchValorDiario(n.nombre, n.unidad);
+      if(!def) return;
+      if(!acumulado[def.etiqueta]) acumulado[def.etiqueta] = { valor:0, unidad:def.unidad, dv:def.dv };
+      acumulado[def.etiqueta].valor += n.valor;
+    });
+  });
+  return acumulado;
+}
+
+function renderizarNutrientesDia(){
+  const acumulado = calcularAcumuladoNutrientesDia();
+  const claves = Object.keys(acumulado);
+  const contenedor = document.getElementById('contenidoNutrientesDia');
+  if(claves.length === 0){
+    contenedor.innerHTML = '<div class="vacio">Todavía no hay alimentos de USDA registrados hoy.</div>';
+    return;
+  }
+  contenedor.innerHTML = claves.sort().map(etiqueta => {
+    const d = acumulado[etiqueta];
+    const pct = Math.round((d.valor / d.dv) * 100);
+    const pctBarra = Math.min(100, pct);
+    return `
+      <div class="campo">
+        <div class="fila" style="margin-bottom:4px;">
+          <span class="etiqueta">${etiqueta}</span>
+          <span class="detalle">${Math.round(d.valor*10)/10}${d.unidad} de ${d.dv}${d.unidad} — ${pct}%</span>
+        </div>
+        <div class="barra"><div style="width:${pctBarra}%; background:${pct >= 100 ? 'var(--oliva)' : 'var(--mostaza)'};"></div></div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
@@ -778,6 +880,7 @@ function borrarRegistro(){
 function abrirModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
   if(fondo) fondo.classList.add('activo');
+  if(id === 'modalNutrientesDia') renderizarNutrientesDia();
 }
 function cerrarModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
