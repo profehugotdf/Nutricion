@@ -155,6 +155,7 @@
     <span class="etiqueta">Gasto por pasos (estimado)</span>
     <span class="num" id="totalPasosKcal" style="font-size:1rem;">0 kcal</span>
   </div>
+  <p class="detalle" id="detallePasosDescontados" style="text-align:right; margin-top:-6px;"></p>
   <div class="fila" style="border-top:1px solid var(--borde); padding-top:8px;">
     <span class="etiqueta">Balance</span>
     <span class="num" id="balance">0 kcal</span>
@@ -652,11 +653,21 @@ function guardarPasosHoy(valor){
   renderizarTodo();
 }
 
-function calcularKcalPorPasos(pasos){
+function calcularPasosSesionesHoy(){
+  const registro = leerJSON('entrenamiento_forma_registro', []);
+  const hoy = hoyISO();
+  return registro
+    .filter(r => r.fecha === hoy)
+    .reduce((acc, r) => acc + (r.pasos || 0), 0);
+}
+
+function calcularKcalPorPasos(pasosTotales){
   const perfil = leerJSON('entrenamiento_perfil', {});
   const peso = perfil.pesoKg || 75; // fallback si todavía no hay peso cargado
-  const kcalPorPaso = 0.04 * (peso / 68); // aproximación estándar, ajustada por peso
-  return Math.round(pasos * kcalPorPaso);
+  const pasosSesiones = calcularPasosSesionesHoy();
+  const pasosNetos = Math.max(0, pasosTotales - pasosSesiones);
+  // Fórmula de caminata normal (no de entrenamiento) — ~0.0007 kcal/paso/kg
+  return Math.round(pasosNetos * peso * 0.0007);
 }
 
 // ---------- Gasto basal (TMB) — Mifflin-St Jeor ----------
@@ -717,6 +728,9 @@ function renderizarTodo(){
   document.getElementById('totalGasto').textContent = `${gastoEntrenamiento} kcal`;
   document.getElementById('inputPasosHoy').value = pasosHoy || '';
   document.getElementById('totalPasosKcal').textContent = `${kcalPasos} kcal`;
+  const pasosSesiones = calcularPasosSesionesHoy();
+  document.getElementById('detallePasosDescontados').textContent =
+    pasosSesiones > 0 ? `(${pasosSesiones} pasos de sesiones de hoy ya contados aparte, restados del total)` : '';
   const elBalance = document.getElementById('balance');
   elBalance.textContent = `${balance >= 0 ? '+' : ''}${balance} kcal`;
   elBalance.className = 'num ' + (balance >= 0 ? 'balance-pos' : 'balance-neg');
