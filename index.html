@@ -373,6 +373,7 @@
       <p class="detalle">Peso, edad y sexo se leen de Plan de Ciclos (entrenamiento_perfil) — no hace falta cargarlos acá.</p>
     </div>
     <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
+    <button class="btn btn-secundario" onclick="exportarBackupNutricion()" style="margin-top:8px;">📥 Exportar datos de Nutrición (backup)</button>
   </div>
 </div>
 
@@ -535,6 +536,25 @@ function renderizarObjetivoPeso(){
     </div>
     <p class="aviso">Este plan es una estimación general (regla de 7700 kcal/kg de grasa), no reemplaza la evaluación de un nutricionista — sobre todo si el déficit se sostiene varias semanas.</p>
   `;
+}
+
+function exportarBackupNutricion(){
+  const backup = {
+    comidasGuardadas: leerJSON(CLAVE_COMIDAS_GUARDADAS, []),
+    registroDiario: leerJSON(CLAVE_REGISTRO_DIARIO, {}),
+    pasosDiarios: leerJSON(CLAVE_PASOS_DIARIOS, {}),
+    objetivoPeso: leerJSON(CLAVE_OBJETIVO_PESO, null),
+    factorProteina: localStorage.getItem('nutricion_factor_proteina'),
+    alturaCm: localStorage.getItem('nutricion_altura_cm'),
+    exportadoEl: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `nutricion-backup-${hoyISO()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------- Categoría de la comida (Desayuno/Almuerzo/Merienda/Cena/Snack) ----------
@@ -1164,11 +1184,11 @@ function agregarIngredienteUSDAAlPlato(nombre, kcal100){
   }
   if(isNaN(gramos) || isNaN(kcal100)){ alert('Completá los gramos y las calorías (a mano si USDA no las trajo).'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
-  const nutrientes = (window._usdaNutrientesPor100gPlato || []).map(n => ({
+  const nutrientes = filtrarNutrientesUtiles((window._usdaNutrientesPor100gPlato || []).map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
     unidad: n.unidad
-  }));
+  })));
   platoEnConstruccion.push({ nombre: `${nombre} (${gramos}g)`, kcal, nutrientes });
   document.getElementById('inputBusquedaPlato').value = '';
   document.getElementById('resultadosUSDAPlato').innerHTML = '';
@@ -1252,6 +1272,11 @@ function registrarPlatoAhora(){
   document.getElementById('nombrePlatoFinal').value = '';
   renderizarIngredientesPlato();
   cerrarModal('modalArmarPlato');
+}
+
+function filtrarNutrientesUtiles(lista){
+  // Solo guarda lo que el panel de % diarios puede usar — descarta desglose de ácidos grasos y demás "Otros"
+  return (lista || []).filter(n => matchValorDiario(n.nombre, n.unidad) !== null);
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
@@ -1383,11 +1408,11 @@ function registrarUSDA(kcal100){
   if(!nombre || isNaN(gramos) || isNaN(kcal100)){ alert('Completá nombre, gramos, y calorías (a mano si USDA no las trajo).'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
 
-  const nutrientesEscalados = (window._usdaNutrientesPor100g || []).map(n => ({
+  const nutrientesEscalados = filtrarNutrientesUtiles((window._usdaNutrientesPor100g || []).map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
     unidad: n.unidad
-  }));
+  })));
 
   agregarAlRegistroHoy({
     nombre: `${nombre} (${gramos}g)`,
