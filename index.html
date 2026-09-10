@@ -233,6 +233,22 @@
       <label>Proteínas (g) — opcional</label>
       <input type="number" id="nuevaProt" placeholder="Ej: 56">
     </div>
+    <div class="campo">
+      <label>Grasas totales (g) — opcional</label>
+      <input type="number" id="nuevaGrasas" placeholder="Ej: 3">
+    </div>
+    <div class="campo">
+      <label>Grasas saturadas (g) — opcional</label>
+      <input type="number" id="nuevaGrasasSat" placeholder="Ej: 1">
+    </div>
+    <div class="campo">
+      <label>Carbohidratos (g) — opcional</label>
+      <input type="number" id="nuevaCarbos" placeholder="Ej: 4">
+    </div>
+    <div class="campo">
+      <label>Sodio (mg) — opcional</label>
+      <input type="number" id="nuevaSodio" placeholder="Ej: 110">
+    </div>
     <button class="btn btn-primario" onclick="guardarComidaManual()">Guardar</button>
   </div>
 </div>
@@ -770,15 +786,30 @@ function guardarComidaManual(){
   const nombre = document.getElementById('nuevaNombre').value.trim();
   const kcal = parseFloat(document.getElementById('nuevaKcal').value);
   const prot = parseFloat(document.getElementById('nuevaProt').value) || null;
+  const grasas = parseFloat(document.getElementById('nuevaGrasas').value);
+  const grasasSat = parseFloat(document.getElementById('nuevaGrasasSat').value);
+  const carbos = parseFloat(document.getElementById('nuevaCarbos').value);
+  const sodio = parseFloat(document.getElementById('nuevaSodio').value);
   if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
 
+  const nutrientes = [];
+  if(prot !== null) nutrientes.push({ nombre:'Protein', valor:prot, unidad:'g' });
+  if(!isNaN(grasas)) nutrientes.push({ nombre:'Total lipid', valor:grasas, unidad:'g' });
+  if(!isNaN(grasasSat)) nutrientes.push({ nombre:'Fatty acids, total saturated', valor:grasasSat, unidad:'g' });
+  if(!isNaN(carbos)) nutrientes.push({ nombre:'Carbohydrate, by difference', valor:carbos, unidad:'g' });
+  if(!isNaN(sodio)) nutrientes.push({ nombre:'Sodium', valor:sodio, unidad:'mg' });
+
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
-  guardadas.push({ nombre, kcal, prot });
+  guardadas.push({ nombre, kcal, prot, nutrientes });
   escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
 
   document.getElementById('nuevaNombre').value = '';
   document.getElementById('nuevaKcal').value = '';
   document.getElementById('nuevaProt').value = '';
+  document.getElementById('nuevaGrasas').value = '';
+  document.getElementById('nuevaGrasasSat').value = '';
+  document.getElementById('nuevaCarbos').value = '';
+  document.getElementById('nuevaSodio').value = '';
   cerrarModal('modalNuevaGuardada');
   abrirModal('modalGuardadas');
 }
@@ -1005,6 +1036,7 @@ const TABLA_VALORES_DIARIOS = [
   { match:['fiber'], etiqueta:'Fibra', dv:28, unidad:'g' },
   { match:['protein'], etiqueta:'Proteínas', dv:50, unidad:'g' },
   { match:['total lipid'], etiqueta:'Grasas totales', dv:78, unidad:'g' },
+  { match:['saturated'], etiqueta:'Grasas saturadas', dv:20, unidad:'g' },
   { match:['carbohydrate, by difference','carbohydrate'], etiqueta:'Carbohidratos', dv:275, unidad:'g' },
   { match:['cholesterol'], etiqueta:'Colesterol', dv:300, unidad:'mg' },
 ];
@@ -1077,6 +1109,12 @@ function renderizarNutrientesDia(){
   const NUTRIENTES_SENSIBLES = ['Vitamina A','Vitamina D','Vitamina E','Vitamina K','Hierro'];
   const bajosSensibles = bajos.filter(et => NUTRIENTES_SENSIBLES.includes(et));
 
+  const NUTRIENTES_SENSIBLES_EXCESO = ['Selenio','Vitamina A','Vitamina D','Hierro','Zinc','Vitamina B6'];
+  const altos = claves.filter(et => {
+    const pct = Math.round((acumulado[et].valor / acumulado[et].dv) * 100);
+    return pct > 200 && NUTRIENTES_SENSIBLES_EXCESO.includes(et);
+  });
+
   const resumenBajos = bajos.length === 0 ? '' : `
     <div class="aviso" style="background:#3A2A22; color:#E8C9B8;">
       ⚠ Por debajo del 50% hoy: <b>${bajos.join(', ')}</b>.
@@ -1085,15 +1123,23 @@ function renderizarNutrientesDia(){
     </div>
   `;
 
-  contenedor.innerHTML = controlProteina + resumenBajos + claves.sort().map(etiqueta => {
+  const resumenAltos = altos.length === 0 ? '' : `
+    <div class="aviso" style="background:#2A2238; color:#D9C9F0;">
+      ⚠ Muy por encima del 100% hoy: <b>${altos.join(', ')}</b>.
+      Un día puntual con una porción grande de algún alimento concentrado (como nueces de Brasil y el selenio) no es preocupante — el riesgo real aparece si el exceso se sostiene día tras día, no en una sola jornada. Si notás que se repite seguido, vale la pena comentarlo en una consulta.
+    </div>
+  `;
+
+  contenedor.innerHTML = controlProteina + resumenBajos + resumenAltos + claves.sort().map(etiqueta => {
     const d = acumulado[etiqueta];
     const pct = Math.round((d.valor / d.dv) * 100);
     const pctBarra = Math.min(100, pct);
-    const color = pct >= 100 ? 'var(--oliva)' : (pct < 50 ? 'var(--tomate)' : 'var(--mostaza)');
+    const esExceso = pct > 200 && NUTRIENTES_SENSIBLES_EXCESO.includes(etiqueta);
+    const color = esExceso ? '#9B7FD4' : (pct >= 100 ? 'var(--oliva)' : (pct < 50 ? 'var(--tomate)' : 'var(--mostaza)'));
     return `
       <div class="campo">
         <div class="fila" style="margin-bottom:4px;">
-          <span class="etiqueta">${pct < 50 ? '⚠ ' : ''}${etiqueta}</span>
+          <span class="etiqueta">${pct < 50 ? '⚠ ' : ''}${esExceso ? '⚠ ' : ''}${etiqueta}</span>
           <span class="detalle">${Math.round(d.valor*10)/10}${d.unidad} de ${d.dv}${d.unidad} — ${pct}%</span>
         </div>
         <div class="barra"><div style="width:${pctBarra}%; background:${color};"></div></div>
