@@ -289,8 +289,8 @@
     <button class="btn-cerrar" onclick="cerrarModal('modalAlimentoUSDA')">✕</button>
     <h3>Alimento genérico (USDA)</h3>
     <div class="campo">
-      <label>Buscar en inglés (ej: "chicken breast raw", "banana")</label>
-      <input type="text" id="inputBusquedaUSDA" placeholder="chicken breast raw">
+      <label>Buscar alimento (en español para los más comunes, o en inglés)</label>
+      <input type="text" id="inputBusquedaUSDA" placeholder="pollo, banana, chicken breast raw…">
     </div>
     <button class="btn btn-primario" onclick="buscarUSDA()">Buscar</button>
     <div id="resultadosUSDA"></div>
@@ -374,6 +374,16 @@
     </div>
     <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
     <button class="btn btn-secundario" onclick="exportarBackupNutricion()" style="margin-top:8px;">📥 Exportar datos de Nutrición (backup)</button>
+  </div>
+</div>
+
+<!-- Modal: editar cantidad antes de re-registrar desde recientes/frecuentes -->
+<div class="modal-fondo" id="fondoEditarReciente">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalEditarReciente')">✕</button>
+    <h3>Registrar de nuevo</h3>
+    <div id="contenidoEditarReciente"></div>
+    <button class="btn btn-primario" onclick="confirmarReregistro()">Registrar</button>
   </div>
 </div>
 
@@ -1096,7 +1106,7 @@ function renderizarNutrientesDia(){
 let platoEnConstruccion = []; // [{nombre, gramos, kcal, nutrientes}]
 
 async function buscarUSDAPlato(){
-  const query = document.getElementById('inputBusquedaPlato').value.trim();
+  const query = traducirBusqueda(document.getElementById('inputBusquedaPlato').value.trim());
   const resultadosDiv = document.getElementById('resultadosUSDAPlato');
   document.getElementById('seleccionUSDAPlato').innerHTML = '';
   if(!query){ alert('Escribí qué ingrediente buscás.'); return; }
@@ -1279,6 +1289,30 @@ function filtrarNutrientesUtiles(lista){
   return (lista || []).filter(n => matchValorDiario(n.nombre, n.unidad) !== null);
 }
 
+// ---------- Diccionario ES→EN para facilitar la búsqueda en USDA ----------
+const DICCIONARIO_ALIMENTOS_ES_EN = {
+  'pollo': 'chicken', 'pechuga de pollo': 'chicken breast', 'carne': 'beef',
+  'carne picada': 'ground beef', 'cerdo': 'pork', 'pescado': 'fish',
+  'atún': 'tuna', 'salmón': 'salmon', 'huevo': 'egg', 'huevos': 'eggs',
+  'leche': 'milk', 'yogur': 'yogurt', 'queso': 'cheese', 'manteca': 'butter',
+  'arroz': 'rice', 'fideos': 'pasta', 'pan': 'bread', 'papa': 'potato',
+  'batata': 'sweet potato', 'banana': 'banana', 'manzana': 'apple',
+  'naranja': 'orange', 'mandarina': 'tangerine', 'pera': 'pear',
+  'palta': 'avocado', 'lechuga': 'lettuce', 'tomate': 'tomato',
+  'cebolla': 'onion', 'zanahoria': 'carrot', 'zapallo': 'squash',
+  'calabaza': 'pumpkin', 'brócoli': 'broccoli', 'espinaca': 'spinach',
+  'nueces': 'walnuts', 'almendras': 'almonds', 'maní': 'peanuts',
+  'semillas de girasol': 'sunflower seeds', 'miel': 'honey',
+  'avena': 'oats', 'lentejas': 'lentils', 'garbanzos': 'chickpeas',
+  'porotos': 'beans', 'mayonesa': 'mayonnaise', 'aceite': 'oil',
+  'azúcar': 'sugar', 'yerba mate': 'yerba mate'
+};
+
+function traducirBusqueda(query){
+  const q = query.trim().toLowerCase();
+  return DICCIONARIO_ALIMENTOS_ES_EN[q] || query;
+}
+
 // ---------- Alimento genérico: USDA FoodData Central ----------
 function obtenerApiKeyUSDA(){
   let key = localStorage.getItem('nutricion_usda_api_key');
@@ -1290,7 +1324,7 @@ function obtenerApiKeyUSDA(){
 }
 
 async function buscarUSDA(){
-  const query = document.getElementById('inputBusquedaUSDA').value.trim();
+  const query = traducirBusqueda(document.getElementById('inputBusquedaUSDA').value.trim());
   const resultadosDiv = document.getElementById('resultadosUSDA');
   document.getElementById('seleccionUSDA').innerHTML = '';
   if(!query){ alert('Escribí qué alimento buscás.'); return; }
@@ -1489,13 +1523,71 @@ function renderizarRecientesYFrecuentes(){
   renderLista(recientes, 'listaRecientes', 'Todavía no registraste nada.');
 }
 
+let _contextoReregistro = null;
+
 function reregistrarItem(item){
-  agregarAlRegistroHoy({
-    nombre: item.nombre,
-    kcal: item.kcal,
-    origen: item.origen,
-    nutrientes: item.nutrientes || []
-  });
+  const match = item.nombre.match(/^(.*)\s\((\d+(?:\.\d+)?)g\)$/);
+  const contenedor = document.getElementById('contenidoEditarReciente');
+
+  if(match){
+    const nombreBase = match[1];
+    const gramosOriginal = parseFloat(match[2]);
+    _contextoReregistro = { modo:'gramos', nombreBase, gramosOriginal, kcalOriginal:item.kcal, nutrientesOriginal:item.nutrientes || [], origen:item.origen };
+    contenedor.innerHTML = `
+      <div class="campo"><label>Alimento</label><p class="detalle">${nombreBase}</p></div>
+      <div class="campo">
+        <label>Gramos</label>
+        <input type="number" id="edReGramos" value="${gramosOriginal}" oninput="actualizarPreviewReregistro()">
+      </div>
+      <p class="detalle" id="edReKcalTexto" style="font-weight:700;">${item.kcal} kcal</p>
+    `;
+  }else{
+    _contextoReregistro = { modo:'manual', nombreBase:item.nombre, nutrientesOriginal:item.nutrientes || [], origen:item.origen };
+    contenedor.innerHTML = `
+      <div class="campo"><label>Alimento</label><p class="detalle">${item.nombre}</p></div>
+      <div class="campo">
+        <label>Calorías</label>
+        <input type="number" id="edReKcalManual" value="${item.kcal}">
+      </div>
+      <p class="aviso">Este ítem no tiene cantidad en gramos asociada (comida guardada o plato armado) — si cambió la porción, ajustá las calorías a mano.</p>
+    `;
+  }
+  abrirModal('modalEditarReciente');
+}
+
+function actualizarPreviewReregistro(){
+  if(!_contextoReregistro || _contextoReregistro.modo !== 'gramos') return;
+  const nuevoGramos = parseFloat(document.getElementById('edReGramos').value) || 0;
+  const factor = nuevoGramos / _contextoReregistro.gramosOriginal;
+  const nuevoKcal = Math.round(_contextoReregistro.kcalOriginal * factor);
+  document.getElementById('edReKcalTexto').textContent = `${nuevoKcal} kcal`;
+}
+
+function confirmarReregistro(){
+  if(!_contextoReregistro) return;
+
+  if(_contextoReregistro.modo === 'gramos'){
+    const nuevoGramos = parseFloat(document.getElementById('edReGramos').value);
+    if(isNaN(nuevoGramos) || nuevoGramos <= 0){ alert('Ingresá gramos válidos.'); return; }
+    const factor = nuevoGramos / _contextoReregistro.gramosOriginal;
+    const kcal = Math.round(_contextoReregistro.kcalOriginal * factor);
+    const nutrientes = _contextoReregistro.nutrientesOriginal.map(n => ({
+      nombre:n.nombre, unidad:n.unidad, valor:Math.round(n.valor * factor * 100) / 100
+    }));
+    agregarAlRegistroHoy({
+      nombre: `${_contextoReregistro.nombreBase} (${nuevoGramos}g)`,
+      kcal, origen:_contextoReregistro.origen, nutrientes
+    });
+  }else{
+    const kcal = parseFloat(document.getElementById('edReKcalManual').value);
+    if(isNaN(kcal)){ alert('Ingresá calorías válidas.'); return; }
+    agregarAlRegistroHoy({
+      nombre:_contextoReregistro.nombreBase, kcal,
+      origen:_contextoReregistro.origen, nutrientes:_contextoReregistro.nutrientesOriginal
+    });
+  }
+  _contextoReregistro = null;
+  cerrarModal('modalEditarReciente');
   cerrarModal('modalRecientes');
 }
 
