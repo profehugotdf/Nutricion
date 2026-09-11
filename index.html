@@ -231,6 +231,10 @@
       <input type="text" id="nuevaNombre" placeholder="Ej: Pollo con salsa mostaza-miel">
     </div>
     <div class="campo">
+      <label>Peso de la porción (g) — opcional, para poder generar etiqueta</label>
+      <input type="number" id="nuevaPesoPorcion" placeholder="Ej: 100">
+    </div>
+    <div class="campo">
       <label>Calorías (kcal)</label>
       <input type="number" id="nuevaKcal" placeholder="Ej: 372">
     </div>
@@ -324,6 +328,8 @@
     <h3>% de requerimientos diarios</h3>
     <p class="aviso">Referencia genérica de adulto (valores diarios FDA, dieta de 2000 kcal) — no ajustada a tu edad/sexo/peso. Solo suma los alimentos registrados vía USDA, que son los que traen panel completo de nutrientes.</p>
     <div id="contenidoNutrientesDia"></div>
+    <button class="btn btn-secundario" onclick="sugerirComidaCompensatoria()" style="margin-top:14px;">💡 Sugerir plato para mañana</button>
+    <div id="resultadoSugerencia"></div>
   </div>
 </div>
 
@@ -391,6 +397,10 @@
     <div class="campo" style="margin-top:14px;">
       <label>Nombre del plato</label>
       <input type="text" id="nombrePlatoFinal" placeholder="Ej: Ensalada">
+    </div>
+    <div class="campo">
+      <label>¿Rinde varias porciones? (para panes, tortas, etc. — dejá en 1 si es un plato individual)</label>
+      <input type="number" id="rindePorcionesPlato" value="1" min="1">
     </div>
     <button class="btn btn-secundario" onclick="guardarPlatoComoGuardada()">Guardar como comida guardada</button>
     <button class="btn btn-primario" onclick="registrarPlatoAhora()">Registrar ahora en Hoy</button>
@@ -830,17 +840,77 @@ function renderizarTodo(){
     listaGuardadas.innerHTML = '<div class="vacio">No tenés comidas guardadas todavía.</div>';
   }else{
     listaGuardadas.innerHTML = guardadas.map((c, idx) => `
-      <div class="comida-item" onclick="registrarGuardada(${idx})">
-        <div>
+      <div class="comida-item">
+        <div onclick="registrarGuardada(${idx})" style="flex:1;">
           <div class="nombre">${c.nombre}</div>
           <div class="detalle">${c.prot ? c.prot + 'g prot · ' : ''}toco para registrar</div>
         </div>
+        <button onclick="event.stopPropagation(); generarEtiqueta(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:8px; font-size:.9rem;">🏷️</button>
         <div class="kcal">${c.kcal} kcal</div>
       </div>
     `).join('');
   }
 }
 
+function generarEtiqueta(idx){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+
+  const pesoPorcion = c.pesoPorcionG || null;
+  const buscarNutriente = (nombres) => (c.nutrientes || []).find(n => nombres.some(x => n.nombre.toLowerCase().includes(x)));
+
+  const prot = buscarNutriente(['protein']);
+  const grasas = buscarNutriente(['total lipid']);
+  const grasasSat = buscarNutriente(['saturated']);
+  const carbos = buscarNutriente(['carbohydrate']);
+  const sodio = buscarNutriente(['sodium']);
+
+  const filaVD = (valor, dvNombre) => {
+    const def = TABLA_VALORES_DIARIOS.find(d => d.etiqueta === dvNombre);
+    if(!def || valor === undefined) return '—';
+    return Math.round((valor / def.dv) * 100) + '%';
+  };
+
+  const html = `
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiqueta — ${c.nombre}</title>
+<style>
+  body{font-family:Arial,sans-serif; max-width:380px; margin:20px auto; color:#111;}
+  .marco{border:3px solid #111; padding:10px;}
+  h2{font-size:1.1rem; border-bottom:6px solid #111; padding-bottom:6px; margin:0 0 6px 0;}
+  .sub{font-size:.8rem; margin-bottom:8px;}
+  table{width:100%; border-collapse:collapse; font-size:.82rem;}
+  td{padding:4px 2px; border-top:1px solid #111;}
+  td.num{text-align:right;}
+  tr.total td{border-top:3px solid #111; font-weight:bold;}
+  tr.energia td{border-top:6px solid #111; font-weight:bold; font-size:1rem;}
+  .nota{font-size:.68rem; margin-top:8px; color:#333;}
+  .aviso-legal{font-size:.72rem; background:#fee; border:1px solid #c00; padding:8px; margin-top:14px; border-radius:4px;}
+  @media print{ .no-print{display:none;} }
+</style></head><body>
+  <div class="marco">
+    <h2>INFORMACIÓN NUTRICIONAL</h2>
+    <div class="sub">${pesoPorcion ? `Porción: ${pesoPorcion} g` : 'Porción: no especificada'}<br>${c.nombre}</div>
+    <table>
+      <tr class="energia"><td>Valor energético</td><td class="num">${c.kcal} kcal</td></tr>
+      <tr><td>Carbohidratos</td><td class="num">${carbos ? carbos.valor + 'g' : '—'}</td></tr>
+      <tr><td>Proteínas</td><td class="num">${prot ? prot.valor + 'g' : '—'}</td></tr>
+      <tr><td>Grasas totales</td><td class="num">${grasas ? grasas.valor + 'g' : '—'}</td></tr>
+      <tr><td>Grasas saturadas</td><td class="num">${grasasSat ? grasasSat.valor + 'g' : '—'}</td></tr>
+      <tr><td>Sodio</td><td class="num">${sodio ? sodio.valor + 'mg' : '—'}</td></tr>
+    </table>
+    <div class="nota">* % Valores Diarios con base a una dieta de 2000 kcal.</div>
+  </div>
+  <div class="aviso-legal">
+    ⚠ Etiqueta orientativa generada a partir de una estimación con datos de USDA (base genérica, no un análisis de laboratorio de esta receta puntual). Para vender este producto formalmente, la normativa argentina (Código Alimentario Argentino, Ley de Etiquetado Frontal 27.642) puede exigir un análisis bromatológico real y registro en ANMAT/bromatología local — esta etiqueta no reemplaza ese trámite.
+  </div>
+  <button class="no-print" onclick="window.print()" style="margin-top:14px; padding:10px 16px;">Imprimir / Guardar como PDF</button>
+</body></html>`;
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(html);
+  ventana.document.close();
+}
 function registrarGuardada(idx){
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   const c = guardadas[idx];
@@ -859,6 +929,7 @@ function guardarComidaManual(){
   const sodio = parseFloat(document.getElementById('nuevaSodio').value);
   const cafeina = parseFloat(document.getElementById('nuevaCafeina').value);
   const magnesio = parseFloat(document.getElementById('nuevaMagnesio').value);
+  const pesoPorcion = parseFloat(document.getElementById('nuevaPesoPorcion').value) || null;
   if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
 
   const nutrientes = [];
@@ -871,7 +942,7 @@ function guardarComidaManual(){
   if(!isNaN(magnesio)) nutrientes.push({ nombre:'Magnesium', valor:magnesio, unidad:'mg' });
 
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
-  guardadas.push({ nombre, kcal, prot, nutrientes });
+  guardadas.push({ nombre, kcal, prot, nutrientes, pesoPorcionG:pesoPorcion });
   escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
 
   document.getElementById('nuevaNombre').value = '';
@@ -883,6 +954,7 @@ function guardarComidaManual(){
   document.getElementById('nuevaSodio').value = '';
   document.getElementById('nuevaCafeina').value = '';
   document.getElementById('nuevaMagnesio').value = '';
+  document.getElementById('nuevaPesoPorcion').value = '';
   cerrarModal('modalNuevaGuardada');
   abrirModal('modalGuardadas');
 }
@@ -1545,10 +1617,17 @@ function fusionarNutrientesPlato(){
 
 function armarObjetoPlatoFinal(){
   const nombre = document.getElementById('nombrePlatoFinal').value.trim();
+  const rinde = parseInt(document.getElementById('rindePorcionesPlato').value) || 1;
   if(!nombre){ alert('Ponele un nombre al plato.'); return null; }
   if(platoEnConstruccion.length === 0){ alert('Agregá al menos un ingrediente.'); return null; }
-  const kcal = platoEnConstruccion.reduce((acc, i) => acc + i.kcal, 0);
-  return { nombre, kcal, nutrientes: fusionarNutrientesPlato() };
+  const kcalTotal = platoEnConstruccion.reduce((acc, i) => acc + i.kcal, 0);
+  const nutrientesTotal = fusionarNutrientesPlato();
+
+  const kcal = Math.round(kcalTotal / rinde);
+  const nutrientes = nutrientesTotal.map(n => ({ ...n, valor: Math.round((n.valor / rinde) * 100) / 100 }));
+  const nombreFinal = rinde > 1 ? `${nombre} (1 porción de ${rinde})` : nombre;
+
+  return { nombre: nombreFinal, kcal, nutrientes };
 }
 
 function guardarPlatoComoGuardada(){
@@ -1559,6 +1638,7 @@ function guardarPlatoComoGuardada(){
   escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
   platoEnConstruccion = [];
   document.getElementById('nombrePlatoFinal').value = '';
+  document.getElementById('rindePorcionesPlato').value = '1';
   renderizarIngredientesPlato();
   cerrarModal('modalArmarPlato');
   renderizarTodo();
@@ -1570,6 +1650,7 @@ function registrarPlatoAhora(){
   agregarAlRegistroHoy({ ...plato, origen:'plato armado' });
   platoEnConstruccion = [];
   document.getElementById('nombrePlatoFinal').value = '';
+  document.getElementById('rindePorcionesPlato').value = '1';
   renderizarIngredientesPlato();
   cerrarModal('modalArmarPlato');
 }
@@ -1604,6 +1685,59 @@ const DICCIONARIO_ALIMENTOS_ES_EN = {
 function traducirBusqueda(query){
   const q = query.trim().toLowerCase();
   return DICCIONARIO_ALIMENTOS_ES_EN[q] || query;
+}
+
+// ---------- Sugerencia de plato compensatorio (texto, barato — sin imagen) ----------
+async function sugerirComidaCompensatoria(){
+  const resultadoDiv = document.getElementById('resultadoSugerencia');
+  const apiKey = obtenerApiKeyAnthropic();
+  if(!apiKey) return;
+
+  const acumulado = calcularAcumuladoNutrientesDia();
+  const claves = Object.keys(acumulado);
+  if(claves.length === 0){
+    resultadoDiv.innerHTML = '<p class="aviso">Todavía no hay datos de nutrientes hoy (solo suma alimentos de USDA) para poder sugerir algo.</p>';
+    return;
+  }
+
+  const bajos = claves
+    .map(et => ({ et, pct: Math.round((acumulado[et].valor / acumulado[et].dv) * 100) }))
+    .filter(x => x.pct < 100)
+    .sort((a, b) => a.pct - b.pct);
+
+  if(bajos.length === 0){
+    resultadoDiv.innerHTML = '<p class="aviso">Ningún nutriente quedó por debajo del 100% hoy — no hay mucho que compensar.</p>';
+    return;
+  }
+
+  const listaBajos = bajos.map(x => `${x.et}: ${x.pct}%`).join(', ');
+  resultadoDiv.innerHTML = '<p class="aviso">Pensando una sugerencia…</p>';
+
+  try{
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:300,
+        messages:[{
+          role:'user',
+          content: `Hoy estos nutrientes quedaron bajos respecto al valor diario recomendado: ${listaBajos}. Sugerime UN plato típico de Argentina, México o Andorra, o directamente una fruta simple, que ayude a cubrir los que están más bajos mañana. Respuesta breve (máximo 4 líneas), en español rioplatense, mencionando de forma concreta por qué ese plato/fruta ayuda con esos nutrientes puntuales. No hace falta exactitud, es solo una orientación.`
+        }]
+      })
+    });
+    const data = await resp.json();
+    const texto = data.content.find(b => b.type === 'text')?.text || 'No se pudo generar una sugerencia.';
+    resultadoDiv.innerHTML = `<div class="aviso">💡 ${texto}</div>`;
+  }catch(e){
+    resultadoDiv.innerHTML = '<p class="aviso">Error pidiendo la sugerencia. Revisá la API key.</p>';
+    console.error(e);
+  }
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
@@ -1974,7 +2108,10 @@ function borrarRegistro(){
 function abrirModal(id){
   const fondo = document.getElementById('fondo' + id.replace('modal',''));
   if(fondo) fondo.classList.add('activo');
-  if(id === 'modalNutrientesDia') renderizarNutrientesDia();
+  if(id === 'modalNutrientesDia'){
+    renderizarNutrientesDia();
+    document.getElementById('resultadoSugerencia').innerHTML = '';
+  }
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalConfig'){
