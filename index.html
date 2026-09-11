@@ -197,6 +197,10 @@
       <span class="icono">🥗</span>
       <span class="txt">Armar plato (varios ingredientes)</span>
     </div>
+    <div class="accion" onclick="abrirModal('modalDescripcion')">
+      <span class="icono">📝</span>
+      <span class="txt">Describir plato (texto)</span>
+    </div>
   </div>
 </section>
 
@@ -280,6 +284,21 @@
     <button class="btn btn-primario" onclick="buscarProducto()">Buscar en Open Food Facts</button>
     <div id="resultadoProducto"></div>
     <p class="aviso">Consulta gratuita a Open Food Facts, sin API key. Si no encuentra el producto, podés cargarlo a mano como comida guardada.</p>
+  </div>
+</div>
+
+<!-- Modal: describir plato por texto -->
+<div class="modal-fondo" id="fondoDescripcion">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalDescripcion')">✕</button>
+    <h3>Describir plato</h3>
+    <div class="campo">
+      <label>Describí el plato en lenguaje natural, con detalle</label>
+      <textarea id="inputDescripcion" rows="4" placeholder="Ej: Un plato de sopa de puerro y papas, con panceta, en caldo de pollo, una rodaja de manteca para freír la panceta." style="width:100%; padding:10px 12px; border:1px solid var(--borde); border-radius:8px; font-size:.9rem; background:#fff; color:var(--tinta); font-family:inherit;"></textarea>
+    </div>
+    <button class="btn btn-primario" onclick="identificarDescripcion()">Identificar con Claude</button>
+    <div id="resultadoDescripcion"></div>
+    <p class="aviso">Más barato que la foto (menos tokens) — sirve mejor cuando ya sabés describir bien la porción, sin depender de que se vea claro en una imagen.</p>
   </div>
 </div>
 
@@ -988,6 +1007,131 @@ function redimensionarImagen(file, maxLado=1024, calidad=0.75){
   });
 }
 
+function obtenerApiKeyAnthropic(){
+  let key = localStorage.getItem('nutricion_api_key');
+  if(!key){
+    key = prompt('Pegá tu API key de Anthropic:');
+    if(key) localStorage.setItem('nutricion_api_key', key);
+  }
+  return key;
+}
+
+// ---------- Describir plato por texto (más barato que foto) ----------
+async function identificarDescripcion(){
+  const descripcion = document.getElementById('inputDescripcion').value.trim();
+  const resultadoDiv = document.getElementById('resultadoDescripcion');
+  if(!descripcion){ alert('Escribí una descripción del plato.'); return; }
+
+  const apiKey = obtenerApiKeyAnthropic();
+  if(!apiKey) return;
+
+  resultadoDiv.innerHTML = '<p class="aviso">Analizando descripción…</p>';
+  try{
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:600,
+        messages:[{
+          role:'user',
+          content: `Descripción de un plato: "${descripcion}". Identificá los alimentos/ingredientes mencionados, estimá gramos, calorías y macronutrientes (proteínas, grasas, carbohidratos en gramos) de cada uno según la descripción. Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total_calorias_estimadas":0,"total_proteinas_g":0,"total_grasas_g":0,"total_carbohidratos_g":0}`
+        }]
+      })
+    });
+    const data = await resp.json();
+    const texto = data.content.find(b => b.type === 'text')?.text || '{}';
+    const limpio = texto.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(limpio);
+    window._descResultado = parsed;
+    renderizarDescripcionEditable();
+  }catch(e){
+    resultadoDiv.innerHTML = '<p class="aviso">Error identificando la descripción. Revisá la API key.</p>';
+    console.error(e);
+  }
+}
+
+function renderizarDescripcionEditable(){
+  const p = window._descResultado;
+  const resultadoDiv = document.getElementById('resultadoDescripcion');
+  const totalKcal = p.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0);
+
+  resultadoDiv.innerHTML = `
+    <div class="campo">
+      <label>Ingredientes identificados (editables)</label>
+      ${p.alimentos.map((a, i) => `
+        <div class="fila" style="gap:6px; margin-bottom:6px;">
+          <input type="text" value="${a.nombre}" oninput="editarItemDesc(${i}, 'nombre', this.value)" style="flex:2; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+          <input type="number" value="${a.gramos_estimados}" oninput="editarItemDesc(${i}, 'gramos_estimados', this.value)" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" placeholder="g">
+          <input type="number" value="${a.calorias}" oninput="editarItemDesc(${i}, 'calorias', this.value)" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" placeholder="kcal">
+          <button onclick="quitarItemDesc(${i})" style="background:none; border:none; color:var(--tomate); font-size:1.1rem;">✕</button>
+        </div>
+      `).join('')}
+      <button class="btn btn-secundario" onclick="agregarItemDesc()">+ Agregar ingrediente</button>
+    </div>
+    <p class="detalle" style="font-weight:700;">Total: ${totalKcal} kcal</p>
+    <div class="campo">
+      <label>Macros totales estimados (editable)</label>
+      <div class="fila" style="gap:6px;">
+        <input type="number" value="${p.total_proteinas_g ?? ''}" oninput="editarMacroDesc('total_proteinas_g', this.value)" placeholder="Prot g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <input type="number" value="${p.total_grasas_g ?? ''}" oninput="editarMacroDesc('total_grasas_g', this.value)" placeholder="Grasas g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <input type="number" value="${p.total_carbohidratos_g ?? ''}" oninput="editarMacroDesc('total_carbohidratos_g', this.value)" placeholder="Carbos g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      </div>
+    </div>
+    <button class="btn btn-primario" onclick="registrarDescripcion()" style="margin-top:10px;">Registrar todo</button>
+  `;
+}
+
+function editarItemDesc(i, campo, valor){
+  window._descResultado.alimentos[i][campo] = (campo === 'nombre') ? valor : (parseFloat(valor) || 0);
+  if(campo !== 'nombre'){
+    const totalKcal = window._descResultado.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0);
+    document.querySelector('#resultadoDescripcion p.detalle[style*="font-weight:700"]').textContent = `Total: ${totalKcal} kcal`;
+  }
+}
+
+function editarMacroDesc(campo, valor){
+  window._descResultado[campo] = parseFloat(valor) || 0;
+}
+
+function agregarItemDesc(){
+  window._descResultado.alimentos.push({ nombre:'', gramos_estimados:0, calorias:0 });
+  renderizarDescripcionEditable();
+}
+
+function quitarItemDesc(i){
+  window._descResultado.alimentos.splice(i, 1);
+  renderizarDescripcionEditable();
+}
+
+function registrarDescripcion(){
+  const parsed = window._descResultado;
+  const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
+
+  const nutrientesEstimados = [];
+  if(typeof parsed.total_proteinas_g === 'number')
+    nutrientesEstimados.push({ nombre:'Protein (estimado por descripción)', valor:parsed.total_proteinas_g, unidad:'g' });
+  if(typeof parsed.total_grasas_g === 'number')
+    nutrientesEstimados.push({ nombre:'Total lipid (estimado por descripción)', valor:parsed.total_grasas_g, unidad:'g' });
+  if(typeof parsed.total_carbohidratos_g === 'number')
+    nutrientesEstimados.push({ nombre:'Carbohydrate, by difference (estimado por descripción)', valor:parsed.total_carbohidratos_g, unidad:'g' });
+
+  agregarAlRegistroHoy({
+    nombre,
+    kcal: parsed.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0),
+    origen:'descripción (estimado)',
+    nutrientes: nutrientesEstimados
+  });
+  document.getElementById('inputDescripcion').value = '';
+  document.getElementById('resultadoDescripcion').innerHTML = '';
+  cerrarModal('modalDescripcion');
+}
+
 async function identificarFoto(){
   const input = document.getElementById('inputFoto');
   const resultadoDiv = document.getElementById('resultadoFoto');
@@ -998,9 +1142,8 @@ async function identificarFoto(){
     const base64 = await redimensionarImagen(input.files[0]);
     // NOTA: implementación de referencia. Requiere API key propia de Anthropic
     // (expuesta en el cliente, ver conversación sobre proxy si se comparte la app).
-    const apiKey = localStorage.getItem('nutricion_api_key') || prompt('Pegá tu API key de Anthropic:');
+    const apiKey = obtenerApiKeyAnthropic();
     if(!apiKey){ resultadoDiv.innerHTML = ''; return; }
-    localStorage.setItem('nutricion_api_key', apiKey);
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
