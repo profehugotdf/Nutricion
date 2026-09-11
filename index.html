@@ -254,6 +254,10 @@
       <label>Cafeína (mg) — opcional</label>
       <input type="number" id="nuevaCafeina" placeholder="Ej: 30">
     </div>
+    <div class="campo">
+      <label>Magnesio (mg) — opcional (para suplementos)</label>
+      <input type="number" id="nuevaMagnesio" placeholder="Ej: 300">
+    </div>
     <button class="btn btn-primario" onclick="guardarComidaManual()">Guardar</button>
   </div>
 </div>
@@ -835,6 +839,7 @@ function guardarComidaManual(){
   const carbos = parseFloat(document.getElementById('nuevaCarbos').value);
   const sodio = parseFloat(document.getElementById('nuevaSodio').value);
   const cafeina = parseFloat(document.getElementById('nuevaCafeina').value);
+  const magnesio = parseFloat(document.getElementById('nuevaMagnesio').value);
   if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
 
   const nutrientes = [];
@@ -844,6 +849,7 @@ function guardarComidaManual(){
   if(!isNaN(carbos)) nutrientes.push({ nombre:'Carbohydrate, by difference', valor:carbos, unidad:'g' });
   if(!isNaN(sodio)) nutrientes.push({ nombre:'Sodium', valor:sodio, unidad:'mg' });
   if(!isNaN(cafeina)) nutrientes.push({ nombre:'Caffeine', valor:cafeina, unidad:'mg' });
+  if(!isNaN(magnesio)) nutrientes.push({ nombre:'Magnesium', valor:magnesio, unidad:'mg' });
 
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   guardadas.push({ nombre, kcal, prot, nutrientes });
@@ -857,6 +863,7 @@ function guardarComidaManual(){
   document.getElementById('nuevaCarbos').value = '';
   document.getElementById('nuevaSodio').value = '';
   document.getElementById('nuevaCafeina').value = '';
+  document.getElementById('nuevaMagnesio').value = '';
   cerrarModal('modalNuevaGuardada');
   abrirModal('modalGuardadas');
 }
@@ -1439,6 +1446,9 @@ const DICCIONARIO_ALIMENTOS_ES_EN = {
   'batata': 'sweet potato', 'banana': 'banana', 'manzana': 'apple',
   'naranja': 'orange', 'mandarina': 'tangerine', 'pera': 'pear',
   'palta': 'avocado', 'lechuga': 'lettuce', 'tomate': 'tomato',
+  'panceta': 'bacon, cooked', 'tocino': 'bacon, cooked', 'puerro': 'leek',
+  'pata muslo': 'chicken thigh', 'muslo': 'chicken thigh', 'pata de pollo': 'chicken drumstick',
+  'choclo': 'corn',
   'cebolla': 'onion', 'zanahoria': 'carrot', 'zapallo': 'squash',
   'calabaza': 'pumpkin', 'brócoli': 'broccoli', 'espinaca': 'spinach',
   'nueces': 'walnuts', 'almendras': 'almonds', 'maní': 'peanuts',
@@ -1639,8 +1649,8 @@ function calcularFrecuentes(todos, limite = 8){
 
 function renderizarRecientesYFrecuentes(){
   const todos = obtenerTodosLosItems();
-  const recientes = calcularRecientes(todos, 25);
-  const frecuentes = calcularFrecuentes(todos, 25);
+  const recientes = calcularRecientes(todos, 50);
+  const frecuentes = calcularFrecuentes(todos, 50);
 
   const renderLista = (lista, elId, vacioTxt) => {
     const el = document.getElementById(elId);
