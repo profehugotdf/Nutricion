@@ -393,6 +393,17 @@
       <input type="number" id="configAltura" placeholder="Ej: 175">
       <p class="detalle">Peso, edad y sexo se leen de Plan de Ciclos (entrenamiento_perfil) — no hace falta cargarlos acá.</p>
     </div>
+    <div class="campo" style="border-top:1px solid var(--borde); padding-top:12px; margin-top:12px;">
+      <label>Datos personales (solo si usás esta app sola, sin Plan de Ciclos)</label>
+      <input type="number" id="configPeso" placeholder="Peso (kg)">
+      <input type="number" id="configEdad" placeholder="Edad" style="margin-top:6px;">
+      <select id="configSexo" style="margin-top:6px;">
+        <option value="">Sexo (para el cálculo de TMB)</option>
+        <option value="M">Masculino</option>
+        <option value="F">Femenino</option>
+      </select>
+      <p class="detalle">Si Plan de Ciclos ya tiene estos datos cargados, esta app usa esos primero — esto es solo un respaldo para uso 100% independiente.</p>
+    </div>
     <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
     <button class="btn btn-secundario" onclick="exportarBackupNutricion()" style="margin-top:8px;">📥 Exportar datos de Nutrición (backup)</button>
   </div>
@@ -493,7 +504,7 @@ function seleccionarRitmo(r){
 function guardarObjetivoPeso(){
   const pesoObjetivo = parseFloat(document.getElementById('inputPesoObjetivo').value);
   if(isNaN(pesoObjetivo)){ alert('Ingresá un peso objetivo.'); return; }
-  const perfil = leerJSON('entrenamiento_perfil', {});
+  const perfil = obtenerPerfilEfectivo();
   const pesoInicial = perfil.pesoKg || null;
 
   escribirJSON(CLAVE_OBJETIVO_PESO, {
@@ -516,7 +527,7 @@ function borrarObjetivoPeso(){
 function calcularDeficitDiarioObjetivo(){
   const objetivo = obtenerObjetivoPeso();
   if(!objetivo) return null;
-  const perfil = leerJSON('entrenamiento_perfil', {});
+  const perfil = obtenerPerfilEfectivo();
   const pesoActual = perfil.pesoKg || objetivo.pesoInicial;
   if(!pesoActual) return null;
 
@@ -545,7 +556,7 @@ function renderizarObjetivoPeso(){
 
   const plan = calcularDeficitDiarioObjetivo();
   if(!plan){
-    resumenDiv.innerHTML = '<p class="aviso">Falta el peso actual en Plan de Ciclos (entrenamiento_perfil) para calcular el plan.</p>';
+    resumenDiv.innerHTML = '<p class="aviso">Falta cargar el peso actual — en Plan de Ciclos, o en "⚙️ API keys → Datos personales" si usás esta app sola.</p>';
     return;
   }
   if(plan.completado){
@@ -614,6 +625,21 @@ function seleccionarCategoria(c){
   renderizarChipsCategoria();
 }
 
+// ---------- Perfil efectivo: usa entrenamiento_perfil (Plan de Ciclos) si existe, si no datos propios de Nutrición ----------
+function obtenerPerfilEfectivo(){
+  const compartido = leerJSON('entrenamiento_perfil', {});
+  const pesoLocal = parseFloat(localStorage.getItem('nutricion_peso_kg'));
+  const edadLocal = parseInt(localStorage.getItem('nutricion_edad'));
+  const sexoLocal = localStorage.getItem('nutricion_sexo');
+
+  return {
+    pesoKg: compartido.pesoKg || (isNaN(pesoLocal) ? null : pesoLocal),
+    edad: compartido.edad || (isNaN(edadLocal) ? null : edadLocal),
+    sexo: compartido.sexo || sexoLocal || null,
+    fuente: compartido.pesoKg ? 'plan-de-ciclos' : 'local'
+  };
+}
+
 // ---------- Claves de almacenamiento ----------
 const CLAVE_COMIDAS_GUARDADAS = 'nutricion_comidas_guardadas';
 const CLAVE_REGISTRO_DIARIO = 'nutricion_registro_diario'; // { 'YYYY-MM-DD': [ {nombre, kcal, prot, hora, origen} ] }
@@ -666,7 +692,7 @@ function calcularPasosSesionesHoy(){
 }
 
 function calcularKcalPorPasos(pasosTotales){
-  const perfil = leerJSON('entrenamiento_perfil', {});
+  const perfil = obtenerPerfilEfectivo();
   const peso = perfil.pesoKg || 75; // fallback si todavía no hay peso cargado
   const pasosSesiones = calcularPasosSesionesHoy();
   const pasosNetos = Math.max(0, pasosTotales - pasosSesiones);
@@ -676,7 +702,7 @@ function calcularKcalPorPasos(pasosTotales){
 
 // ---------- Gasto basal (TMB) — Mifflin-St Jeor ----------
 function calcularTMB(){
-  const perfil = leerJSON('entrenamiento_perfil', {});
+  const perfil = obtenerPerfilEfectivo();
   const altura = parseFloat(localStorage.getItem('nutricion_altura_cm'));
   const peso = perfil.pesoKg;
   const edad = perfil.edad;
@@ -1071,7 +1097,7 @@ function matchValorDiario(nombre, unidad){
 
 // ---------- Objetivo de proteínas personalizado (según peso de entrenamiento_perfil) ----------
 function obtenerPesoPerfil(){
-  const perfil = leerJSON('entrenamiento_perfil', {});
+  const perfil = obtenerPerfilEfectivo();
   return typeof perfil.pesoKg === 'number' ? perfil.pesoKg : null;
 }
 
@@ -1756,6 +1782,9 @@ function abrirModal(id){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
     document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
     document.getElementById('configAltura').value = localStorage.getItem('nutricion_altura_cm') || '';
+    document.getElementById('configPeso').value = localStorage.getItem('nutricion_peso_kg') || '';
+    document.getElementById('configEdad').value = localStorage.getItem('nutricion_edad') || '';
+    document.getElementById('configSexo').value = localStorage.getItem('nutricion_sexo') || '';
   }
 }
 
@@ -1763,9 +1792,15 @@ function guardarConfigKeys(){
   const anthropic = document.getElementById('configApiKeyAnthropic').value.trim();
   const usda = document.getElementById('configApiKeyUSDA').value.trim();
   const altura = document.getElementById('configAltura').value.trim();
+  const peso = document.getElementById('configPeso').value.trim();
+  const edad = document.getElementById('configEdad').value.trim();
+  const sexo = document.getElementById('configSexo').value;
   if(anthropic) localStorage.setItem('nutricion_api_key', anthropic); else localStorage.removeItem('nutricion_api_key');
   if(usda) localStorage.setItem('nutricion_usda_api_key', usda); else localStorage.removeItem('nutricion_usda_api_key');
   if(altura) localStorage.setItem('nutricion_altura_cm', altura); else localStorage.removeItem('nutricion_altura_cm');
+  if(peso) localStorage.setItem('nutricion_peso_kg', peso); else localStorage.removeItem('nutricion_peso_kg');
+  if(edad) localStorage.setItem('nutricion_edad', edad); else localStorage.removeItem('nutricion_edad');
+  if(sexo) localStorage.setItem('nutricion_sexo', sexo); else localStorage.removeItem('nutricion_sexo');
   cerrarModal('modalConfig');
   renderizarTodo();
 }
