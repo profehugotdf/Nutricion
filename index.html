@@ -1019,22 +1019,68 @@ async function identificarFoto(){
     const texto = data.content.find(b => b.type === 'text')?.text || '{}';
     const limpio = texto.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(limpio);
-
-    resultadoDiv.innerHTML = `
-      <div class="campo">
-        <label>Estimación (${parsed.total_calorias_estimadas} kcal total)</label>
-        ${parsed.alimentos.map(a => `<p class="detalle">${a.nombre} — ${a.gramos_estimados}g — ${a.calorias} kcal</p>`).join('')}
-        <p class="detalle" style="margin-top:6px;">Proteínas: ${parsed.total_proteinas_g ?? '?'}g · Grasas: ${parsed.total_grasas_g ?? '?'}g · Carbohidratos: ${parsed.total_carbohidratos_g ?? '?'}g (estimado)</p>
-      </div>
-      <button class="btn btn-primario" onclick='registrarFoto(${JSON.stringify(parsed)})'>Registrar todo</button>
-    `;
+    window._fotoResultado = parsed; // mutable, se edita antes de registrar
+    renderizarFotoEditable();
   }catch(e){
     resultadoDiv.innerHTML = '<p class="aviso">Error identificando la foto. Revisá la API key.</p>';
     console.error(e);
   }
 }
 
-function registrarFoto(parsed){
+function renderizarFotoEditable(){
+  const p = window._fotoResultado;
+  const resultadoDiv = document.getElementById('resultadoFoto');
+  const totalKcal = p.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0);
+
+  resultadoDiv.innerHTML = `
+    <div class="campo">
+      <label>Ingredientes identificados (editables)</label>
+      ${p.alimentos.map((a, i) => `
+        <div class="fila" style="gap:6px; margin-bottom:6px;">
+          <input type="text" value="${a.nombre}" oninput="editarItemFoto(${i}, 'nombre', this.value)" style="flex:2; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+          <input type="number" value="${a.gramos_estimados}" oninput="editarItemFoto(${i}, 'gramos_estimados', this.value)" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" placeholder="g">
+          <input type="number" value="${a.calorias}" oninput="editarItemFoto(${i}, 'calorias', this.value)" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" placeholder="kcal">
+          <button onclick="quitarItemFoto(${i})" style="background:none; border:none; color:var(--tomate); font-size:1.1rem;">✕</button>
+        </div>
+      `).join('')}
+      <button class="btn btn-secundario" onclick="agregarItemFoto()">+ Agregar ingrediente</button>
+    </div>
+    <p class="detalle" style="font-weight:700;">Total: ${totalKcal} kcal</p>
+    <div class="campo">
+      <label>Macros totales estimados (editable)</label>
+      <div class="fila" style="gap:6px;">
+        <input type="number" value="${p.total_proteinas_g ?? ''}" oninput="editarMacroFoto('total_proteinas_g', this.value)" placeholder="Prot g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <input type="number" value="${p.total_grasas_g ?? ''}" oninput="editarMacroFoto('total_grasas_g', this.value)" placeholder="Grasas g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <input type="number" value="${p.total_carbohidratos_g ?? ''}" oninput="editarMacroFoto('total_carbohidratos_g', this.value)" placeholder="Carbos g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      </div>
+    </div>
+    <button class="btn btn-primario" onclick="registrarFoto()" style="margin-top:10px;">Registrar todo</button>
+  `;
+}
+
+function editarItemFoto(i, campo, valor){
+  window._fotoResultado.alimentos[i][campo] = (campo === 'nombre') ? valor : (parseFloat(valor) || 0);
+  if(campo !== 'nombre'){
+    const totalKcal = window._fotoResultado.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0);
+    document.querySelector('#resultadoFoto p.detalle[style*="font-weight:700"]').textContent = `Total: ${totalKcal} kcal`;
+  }
+}
+
+function editarMacroFoto(campo, valor){
+  window._fotoResultado[campo] = parseFloat(valor) || 0;
+}
+
+function agregarItemFoto(){
+  window._fotoResultado.alimentos.push({ nombre:'', gramos_estimados:0, calorias:0 });
+  renderizarFotoEditable();
+}
+
+function quitarItemFoto(i){
+  window._fotoResultado.alimentos.splice(i, 1);
+  renderizarFotoEditable();
+}
+function registrarFoto(){
+  const parsed = window._fotoResultado;
   const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
 
   const nutrientesEstimados = [];
@@ -1047,7 +1093,7 @@ function registrarFoto(parsed){
 
   agregarAlRegistroHoy({
     nombre,
-    kcal: parsed.total_calorias_estimadas,
+    kcal: parsed.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0),
     origen:'foto (estimado)',
     nutrientes: nutrientesEstimados
   });
