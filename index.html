@@ -250,6 +250,10 @@
       <label>Sodio (mg) — opcional</label>
       <input type="number" id="nuevaSodio" placeholder="Ej: 110">
     </div>
+    <div class="campo">
+      <label>Cafeína (mg) — opcional</label>
+      <input type="number" id="nuevaCafeina" placeholder="Ej: 30">
+    </div>
     <button class="btn btn-primario" onclick="guardarComidaManual()">Guardar</button>
   </div>
 </div>
@@ -804,6 +808,7 @@ function guardarComidaManual(){
   const grasasSat = parseFloat(document.getElementById('nuevaGrasasSat').value);
   const carbos = parseFloat(document.getElementById('nuevaCarbos').value);
   const sodio = parseFloat(document.getElementById('nuevaSodio').value);
+  const cafeina = parseFloat(document.getElementById('nuevaCafeina').value);
   if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
 
   const nutrientes = [];
@@ -812,6 +817,7 @@ function guardarComidaManual(){
   if(!isNaN(grasasSat)) nutrientes.push({ nombre:'Fatty acids, total saturated', valor:grasasSat, unidad:'g' });
   if(!isNaN(carbos)) nutrientes.push({ nombre:'Carbohydrate, by difference', valor:carbos, unidad:'g' });
   if(!isNaN(sodio)) nutrientes.push({ nombre:'Sodium', valor:sodio, unidad:'mg' });
+  if(!isNaN(cafeina)) nutrientes.push({ nombre:'Caffeine', valor:cafeina, unidad:'mg' });
 
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   guardadas.push({ nombre, kcal, prot, nutrientes });
@@ -824,6 +830,7 @@ function guardarComidaManual(){
   document.getElementById('nuevaGrasasSat').value = '';
   document.getElementById('nuevaCarbos').value = '';
   document.getElementById('nuevaSodio').value = '';
+  document.getElementById('nuevaCafeina').value = '';
   cerrarModal('modalNuevaGuardada');
   abrirModal('modalGuardadas');
 }
@@ -1053,6 +1060,7 @@ const TABLA_VALORES_DIARIOS = [
   { match:['saturated'], etiqueta:'Grasas saturadas', dv:20, unidad:'g' },
   { match:['carbohydrate, by difference','carbohydrate'], etiqueta:'Carbohidratos', dv:275, unidad:'g' },
   { match:['cholesterol'], etiqueta:'Colesterol', dv:300, unidad:'mg' },
+  { match:['caffeine'], etiqueta:'Cafeína', dv:400, unidad:'mg' }, // no es %VD oficial de la FDA — 400mg/día es el umbral orientativo (EFSA/FDA) para adultos sanos
 ];
 
 function matchValorDiario(nombre, unidad){
@@ -1559,8 +1567,8 @@ function calcularFrecuentes(todos, limite = 8){
 
 function renderizarRecientesYFrecuentes(){
   const todos = obtenerTodosLosItems();
-  const recientes = calcularRecientes(todos, 20);
-  const frecuentes = calcularFrecuentes(todos, 20);
+  const recientes = calcularRecientes(todos, 25);
+  const frecuentes = calcularFrecuentes(todos, 25);
 
   const renderLista = (lista, elId, vacioTxt) => {
     const el = document.getElementById(elId);
