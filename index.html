@@ -792,7 +792,7 @@ function registrarGuardada(idx){
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   const c = guardadas[idx];
   if(!c) return;
-  agregarAlRegistroHoy({ nombre:c.nombre, kcal:c.kcal, prot:c.prot, nutrientes:c.nutrientes || [], origen:'guardada' });
+  reregistrarItem({ nombre:c.nombre, kcal:c.kcal, nutrientes:c.nutrientes || [], origen:'guardada' });
   cerrarModal('modalGuardadas');
 }
 
@@ -1559,8 +1559,8 @@ function calcularFrecuentes(todos, limite = 8){
 
 function renderizarRecientesYFrecuentes(){
   const todos = obtenerTodosLosItems();
-  const recientes = calcularRecientes(todos);
-  const frecuentes = calcularFrecuentes(todos);
+  const recientes = calcularRecientes(todos, 20);
+  const frecuentes = calcularFrecuentes(todos, 20);
 
   const renderLista = (lista, elId, vacioTxt) => {
     const el = document.getElementById(elId);
@@ -1602,25 +1602,31 @@ function reregistrarItem(item){
       <p class="detalle" id="edReKcalTexto" style="font-weight:700;">${item.kcal} kcal</p>
     `;
   }else{
-    _contextoReregistro = { modo:'manual', nombreBase:item.nombre, nutrientesOriginal:item.nutrientes || [], origen:item.origen };
+    _contextoReregistro = { modo:'porciones', nombreBase:item.nombre, kcalBase:item.kcal, nutrientesBase:item.nutrientes || [], origen:item.origen };
     contenedor.innerHTML = `
-      <div class="campo"><label>Alimento</label><p class="detalle">${item.nombre}</p></div>
+      <div class="campo"><label>Alimento</label><p class="detalle">${item.nombre} (${item.kcal} kcal por porción)</p></div>
       <div class="campo">
-        <label>Calorías</label>
-        <input type="number" id="edReKcalManual" value="${item.kcal}">
+        <label>Cantidad de porciones</label>
+        <input type="number" id="edReProrciones" value="1" step="0.5" min="0.5" oninput="actualizarPreviewReregistro()">
       </div>
-      <p class="aviso">Este ítem no tiene cantidad en gramos asociada (comida guardada o plato armado) — si cambió la porción, ajustá las calorías a mano.</p>
+      <p class="detalle" id="edReKcalTexto" style="font-weight:700;">${item.kcal} kcal</p>
     `;
   }
   abrirModal('modalEditarReciente');
 }
 
 function actualizarPreviewReregistro(){
-  if(!_contextoReregistro || _contextoReregistro.modo !== 'gramos') return;
-  const nuevoGramos = parseFloat(document.getElementById('edReGramos').value) || 0;
-  const factor = nuevoGramos / _contextoReregistro.gramosOriginal;
-  const nuevoKcal = Math.round(_contextoReregistro.kcalOriginal * factor);
-  document.getElementById('edReKcalTexto').textContent = `${nuevoKcal} kcal`;
+  if(!_contextoReregistro) return;
+  if(_contextoReregistro.modo === 'gramos'){
+    const nuevoGramos = parseFloat(document.getElementById('edReGramos').value) || 0;
+    const factor = nuevoGramos / _contextoReregistro.gramosOriginal;
+    const nuevoKcal = Math.round(_contextoReregistro.kcalOriginal * factor);
+    document.getElementById('edReKcalTexto').textContent = `${nuevoKcal} kcal`;
+  }else if(_contextoReregistro.modo === 'porciones'){
+    const porciones = parseFloat(document.getElementById('edReProrciones').value) || 0;
+    const nuevoKcal = Math.round(_contextoReregistro.kcalBase * porciones);
+    document.getElementById('edReKcalTexto').textContent = `${nuevoKcal} kcal`;
+  }
 }
 
 function confirmarReregistro(){
@@ -1636,6 +1642,17 @@ function confirmarReregistro(){
     }));
     agregarAlRegistroHoy({
       nombre: `${_contextoReregistro.nombreBase} (${nuevoGramos}g)`,
+      kcal, origen:_contextoReregistro.origen, nutrientes
+    });
+  }else if(_contextoReregistro.modo === 'porciones'){
+    const porciones = parseFloat(document.getElementById('edReProrciones').value);
+    if(isNaN(porciones) || porciones <= 0){ alert('Ingresá una cantidad de porciones válida.'); return; }
+    const kcal = Math.round(_contextoReregistro.kcalBase * porciones);
+    const nutrientes = _contextoReregistro.nutrientesBase.map(n => ({
+      nombre:n.nombre, unidad:n.unidad, valor:Math.round(n.valor * porciones * 100) / 100
+    }));
+    agregarAlRegistroHoy({
+      nombre: porciones === 1 ? _contextoReregistro.nombreBase : `${_contextoReregistro.nombreBase} (${porciones} porciones)`,
       kcal, origen:_contextoReregistro.origen, nutrientes
     });
   }else{
