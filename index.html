@@ -516,6 +516,10 @@
     <button class="btn-cerrar" onclick="cerrarModal('modalRecientes')">✕</button>
     <h3>Recientes / frecuentes</h3>
     <p class="aviso">Tocá cualquiera para registrarlo de nuevo hoy, con la categoría seleccionada arriba.</p>
+    <div class="campo">
+      <label>Filtrar (busca en todo tu historial, no solo en la lista de abajo)</label>
+      <input type="text" id="inputFiltroRecientes" placeholder="Escribí para filtrar…" oninput="filtrarRecientesYFrecuentes()">
+    </div>
     <h3 style="font-size:.95rem; margin-top:16px;">Frecuentes</h3>
     <div class="lista-comidas" id="listaFrecuentes"></div>
     <h3 style="font-size:.95rem; margin-top:16px;">Recientes</h3>
@@ -2212,6 +2216,11 @@ function renderizarRecientesYFrecuentes(){
   const recientes = calcularRecientes(todos, 50);
   const frecuentes = calcularFrecuentes(todos, 50);
 
+  window._recientesCache = recientes;
+  window._frecuentesCache = frecuentes;
+  window._todosCache = todos;
+  document.getElementById('inputFiltroRecientes').value = '';
+
   const renderLista = (lista, elId, vacioTxt) => {
     const el = document.getElementById(elId);
     if(lista.length === 0){
@@ -2231,6 +2240,42 @@ function renderizarRecientesYFrecuentes(){
 
   renderLista(frecuentes, 'listaFrecuentes', 'Todavía no hay comidas repetidas.');
   renderLista(recientes, 'listaRecientes', 'Todavía no registraste nada.');
+}
+
+function filtrarRecientesYFrecuentes(){
+  const q = normalizarTexto(document.getElementById('inputFiltroRecientes').value.trim());
+
+  const renderLista = (lista, elId, vacioTxt) => {
+    const el = document.getElementById(elId);
+    if(lista.length === 0){
+      el.innerHTML = `<div class="vacio">${vacioTxt}</div>`;
+      return;
+    }
+    el.innerHTML = lista.map(i => `
+      <div class="comida-item" onclick='reregistrarItem(${JSON.stringify(i)})'>
+        <div>
+          <div class="nombre">${i.nombre}</div>
+          <div class="detalle">${i.origen || ''}</div>
+        </div>
+        <div class="kcal">${i.kcal} kcal</div>
+      </div>
+    `).join('');
+  };
+
+  if(!q){
+    // Sin texto: volver a la vista normal (top 50 recientes/frecuentes)
+    renderLista(window._frecuentesCache || [], 'listaFrecuentes', 'Todavía no hay comidas repetidas.');
+    renderLista(window._recientesCache || [], 'listaRecientes', 'Todavía no registraste nada.');
+    return;
+  }
+
+  // Con texto: buscar en TODO el historial, no solo en el top 50 ya mostrado
+  const todos = window._todosCache || [];
+  const recientesFiltrados = calcularRecientes(todos, 1000).filter(i => normalizarTexto(i.nombre).includes(q)).slice(0, 30);
+  const frecuentesFiltrados = calcularFrecuentes(todos, 1000).filter(i => normalizarTexto(i.nombre).includes(q)).slice(0, 30);
+
+  renderLista(frecuentesFiltrados, 'listaFrecuentes', 'Sin resultados en frecuentes.');
+  renderLista(recientesFiltrados, 'listaRecientes', 'Sin resultados en todo el historial.');
 }
 
 let _contextoReregistro = null;
