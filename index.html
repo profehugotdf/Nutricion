@@ -147,6 +147,7 @@
     <span class="etiqueta">Gasto por entrenamiento</span>
     <span class="num" id="totalGasto" style="font-size:1rem;">0 kcal</span>
   </div>
+  <p class="detalle" id="detalleGastoPorDeporte" style="text-align:right; margin-top:-6px;"></p>
   <div class="fila">
     <span class="etiqueta">Pasos de hoy</span>
     <input type="number" id="inputPasosHoy" placeholder="Ej: 8000" style="width:100px; text-align:right; padding:4px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;" onchange="guardarPasosHoy(this.value)">
@@ -955,42 +956,42 @@ function calcularKcalKeytel(pulso, duracionMin, peso, edad, sexo){
   return Math.max(0, Math.round(kcalPorMin * duracionMin));
 }
 
-function calcularGastoHoyDirecto(){
+
+// ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
+function calcularGastoHoyPorDeporte(){
   const perfil = obtenerPerfilEfectivo();
   const hoy = hoyISO();
   const registroCompartido = leerJSON('entrenamiento_forma_registro', []);
-  const idsYaConCalorias = new Set(
-    registroCompartido.filter(r => r.fecha === hoy && typeof r.calorias === 'number').map(r => r.id)
-  );
-  let totalDirecto = 0;
+  const porDeporte = {};
+  const idsYaConCalorias = new Set();
+
+  registroCompartido
+    .filter(r => r.fecha === hoy && typeof r.calorias === 'number')
+    .forEach(r => {
+      const d = r.deporte || 'otro';
+      porDeporte[d] = (porDeporte[d] || 0) + r.calorias;
+      if(r.id) idsYaConCalorias.add(r.id);
+    });
 
   Object.entries(CLAVES_SESIONES_CRUDAS).forEach(([deporte, clave]) => {
     const sesiones = leerJSON(clave, []);
     sesiones.forEach(s => {
       const fechaSesion = (s.fecha || (s.inicioISO || '').slice(0,10));
       if(fechaSesion !== hoy) return;
-      if(s.id && idsYaConCalorias.has(s.id)) return; // ya la contó Plan de Ciclos, no duplicar
+      if(s.id && idsYaConCalorias.has(s.id)) return;
       const { pulso, duracionMin } = extraerPulsoYDuracion(s);
       const kcal = calcularKcalKeytel(pulso, duracionMin, perfil.pesoKg, perfil.edad, perfil.sexo);
-      if(kcal) totalDirecto += kcal;
+      if(kcal) porDeporte[deporte] = (porDeporte[deporte] || 0) + kcal;
+      else if(!(deporte in porDeporte)) porDeporte[deporte] = porDeporte[deporte] || 0; // deja rastro aunque sea 0, para detectar sesiones sin pulso
     });
   });
 
-  return totalDirecto;
+  return porDeporte;
 }
 
-// ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
 function calcularGastoHoy(){
-  const registro = leerJSON(CLAVE_FORMA, []);
-  const hoy = hoyISO();
-  const yaCalculadoPorPlanDeCiclos = registro
-    .filter(r => r.fecha === hoy && typeof r.calorias === 'number')
-    .reduce((acc, r) => acc + r.calorias, 0);
-
-  // Lo que Plan de Ciclos todavía no calculó, lo calculamos acá mismo (sin depender de abrirlo)
-  const calculadoDirecto = calcularGastoHoyDirecto();
-
-  return yaCalculadoPorPlanDeCiclos + calculadoDirecto;
+  const porDeporte = calcularGastoHoyPorDeporte();
+  return Object.values(porDeporte).reduce((acc, v) => acc + v, 0);
 }
 
 // ---------- Registro diario de comidas ----------
@@ -1033,6 +1034,12 @@ function renderizarTodo(){
   document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
   document.getElementById('totalTMB').textContent = tmb !== null ? `${tmb} kcal` : 'Cargá altura en ⚙️';
   document.getElementById('totalGasto').textContent = `${gastoEntrenamiento} kcal`;
+  const porDeporte = calcularGastoHoyPorDeporte();
+  const ICONOS_DEPORTE = { correr:'🏃', bici:'🚴', kayak:'🚣', fuerza:'🏋️' };
+  const desglose = Object.keys(porDeporte)
+    .map(d => `${ICONOS_DEPORTE[d] || ''} ${d}: ${porDeporte[d]}kcal`)
+    .join(' · ');
+  document.getElementById('detalleGastoPorDeporte').textContent = desglose;
   document.getElementById('inputPasosHoy').value = pasosHoy || '';
   document.getElementById('totalPasosKcal').textContent = `${kcalPasos} kcal`;
   const pasosSesiones = calcularPasosSesionesHoy();
