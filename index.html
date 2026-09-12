@@ -191,6 +191,10 @@
       <span class="icono">🌾</span>
       <span class="txt">Alimento genérico (USDA)</span>
     </div>
+    <div class="accion" onclick="abrirModal('modalArgentina')">
+      <span class="icono">🇦🇷</span>
+      <span class="txt">Alimentos Argentina (SARA2)</span>
+    </div>
     <div class="accion" onclick="abrirModal('modalRecientes')">
       <span class="icono">🕐</span>
       <span class="txt">Recientes / frecuentes</span>
@@ -368,6 +372,22 @@
     <div id="contenidoNutrientesDia"></div>
     <button class="btn btn-secundario" onclick="sugerirComidaCompensatoria()" style="margin-top:14px;">💡 Sugerir plato para mañana</button>
     <div id="resultadoSugerencia"></div>
+  </div>
+</div>
+
+<!-- Modal: alimentos Argentina (SARA2) -->
+<div class="modal-fondo" id="fondoArgentina">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalArgentina')">✕</button>
+    <h3>Alimentos Argentina (SARA2)</h3>
+    <div class="campo">
+      <label>Buscar en español (dulce de leche, milanesa, mate cocido…)</label>
+      <input type="text" id="inputBusquedaArgentina" placeholder="dulce de leche">
+    </div>
+    <button class="btn btn-primario" onclick="buscarArgentina()">Buscar</button>
+    <div id="resultadosArgentina"></div>
+    <div id="seleccionArgentina"></div>
+    <p class="aviso">Tabla SARA2 del Ministerio de Salud (2022), 1072 alimentos argentinos con perfil completo — sin API key, todo en español, sin conexión externa.</p>
   </div>
 </div>
 
@@ -1907,6 +1927,100 @@ async function sugerirComidaCompensatoria(){
     resultadoDiv.innerHTML = '<p class="aviso">Error pidiendo la sugerencia. Revisá la API key.</p>';
     console.error(e);
   }
+}
+
+// ---------- Alimentos Argentina (SARA2, archivo estático) ----------
+let _alimentosArgentinaCache = null;
+
+function normalizarTexto(s){
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+async function cargarAlimentosArgentina(){
+  if(_alimentosArgentinaCache) return _alimentosArgentinaCache;
+  const resp = await fetch('alimentos-argentina.json');
+  _alimentosArgentinaCache = await resp.json();
+  return _alimentosArgentinaCache;
+}
+
+async function buscarArgentina(){
+  const query = document.getElementById('inputBusquedaArgentina').value.trim();
+  const resultadosDiv = document.getElementById('resultadosArgentina');
+  document.getElementById('seleccionArgentina').innerHTML = '';
+  if(!query){ alert('Escribí qué alimento buscás.'); return; }
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const datos = await cargarAlimentosArgentina();
+    const q = normalizarTexto(query);
+    const resultados = datos.filter(a => normalizarTexto(a.nombre).includes(q)).slice(0, 15);
+    if(resultados.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados en SARA2. Probá con USDA o cargalo a mano.</p>';
+      return;
+    }
+    resultadosDiv.innerHTML = resultados.map(a => `
+      <div class="comida-item" onclick='seleccionarArgentina(${JSON.stringify(a.nombre)})'>
+        <div>
+          <div class="nombre">${a.nombre}</div>
+          <div class="detalle">${a.kcal_100g !== null ? a.kcal_100g + ' kcal/100g' : 'sin dato de energía'}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">No se pudo cargar el archivo de alimentos argentinos. ¿Está subido junto al index.html?</p>';
+    console.error(e);
+  }
+}
+
+function seleccionarArgentina(nombre){
+  const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombre);
+  if(!alimento) return;
+  const seleccionDiv = document.getElementById('seleccionArgentina');
+
+  const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+  alimento.nutrientes_100g.forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+  const renderGrupo = (titulo, items) => items.length === 0 ? '' : `
+    <div class="campo">
+      <label>${titulo}</label>
+      ${items.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
+    </div>
+  `;
+
+  seleccionDiv.innerHTML = `
+    <div class="campo">
+      <label>Nombre (editable)</label>
+      <input type="text" id="argentinaNombreEditable" value="${alimento.nombre}">
+    </div>
+    <p class="detalle" style="font-weight:700;">${alimento.kcal_100g !== null ? alimento.kcal_100g + ' kcal / 100g' : 'Sin dato de energía'}</p>
+    ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
+    ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
+    ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
+    <div class="campo">
+      <label>Gramos consumidos</label>
+      <input type="number" id="argentinaGramos" placeholder="Ej: 100">
+    </div>
+    <button class="btn btn-primario" onclick='registrarArgentina(${JSON.stringify(nombre)})'>Registrar</button>
+  `;
+}
+
+function registrarArgentina(nombreOriginal){
+  const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombreOriginal);
+  const nombre = document.getElementById('argentinaNombreEditable').value.trim();
+  const gramos = parseFloat(document.getElementById('argentinaGramos').value);
+  if(!nombre || isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+
+  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  })));
+
+  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'SARA2', nutrientes });
+  document.getElementById('inputBusquedaArgentina').value = '';
+  document.getElementById('resultadosArgentina').innerHTML = '';
+  document.getElementById('seleccionArgentina').innerHTML = '';
+  cerrarModal('modalArgentina');
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
