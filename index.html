@@ -167,6 +167,8 @@
   <div class="barra"><div id="barraProgreso" style="width:0%;"></div></div>
   <button class="btn btn-secundario" onclick="abrirModal('modalNutrientesDia')" style="margin-top:14px;">Ver % de nutrientes del día</button>
   <button class="btn btn-secundario" onclick="abrirModal('modalObjetivoPeso')" style="margin-top:8px;">🎯 Objetivo de peso</button>
+  <button class="btn btn-secundario" onclick="abrirModal('modalEvolucionPeso')" style="margin-top:8px;">📈 Evolución de peso</button>
+  <button class="btn btn-secundario" onclick="abrirModal('modalCarencias')" style="margin-top:8px;">📊 Carencias/excesos acumulados</button>
 </section>
 
 <section>
@@ -318,6 +320,33 @@
     <button class="btn btn-primario" onclick="identificarFoto()">Identificar con Claude</button>
     <div id="resultadoFoto"></div>
     <p class="aviso">Reservá esta opción para comidas eventuales — cada foto tiene un costo de API. Para tu rutina diaria usá "Comida guardada".</p>
+  </div>
+</div>
+
+<!-- Modal: evolución de peso -->
+<div class="modal-fondo" id="fondoEvolucionPeso">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalEvolucionPeso')">✕</button>
+    <h3>Evolución de peso</h3>
+    <div class="campo">
+      <label>Registrar peso de hoy (kg)</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputPesoHoy" step="0.1" placeholder="Ej: 91.5" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarPesoHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionPeso"></div>
+    <p class="aviso">Si ya usás Plan de Ciclos para cargar el peso, ese historial también se muestra acá combinado — no hace falta cargarlo dos veces.</p>
+  </div>
+</div>
+
+<!-- Modal: carencias/excesos acumulados -->
+<div class="modal-fondo" id="fondoCarencias">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalCarencias')">✕</button>
+    <h3>Carencias/excesos acumulados</h3>
+    <p class="aviso">Mirando los últimos 14 días con datos de USDA — nutrientes que estuvieron bajos o muy altos en la mitad o más de esos días, no solo una vez.</p>
+    <div id="contenidoCarencias"></div>
   </div>
 </div>
 
@@ -520,6 +549,126 @@ function escribirResumenDiarioCompartido(consumido, gastoTotal, balance){
   const resumen = leerJSON(CLAVE_RESUMEN_COMPARTIDO, {});
   resumen[hoyISO()] = { consumido, gastoTotal, balance, proteinasG };
   escribirJSON(CLAVE_RESUMEN_COMPARTIDO, resumen);
+}
+
+// ---------- Evolución de peso (combina historial propio + el de Plan de Ciclos si existe) ----------
+const CLAVE_HISTORIAL_PESO_LOCAL = 'nutricion_historial_peso'; // [{fecha, pesoKg}]
+
+function guardarPesoHoy(){
+  const peso = parseFloat(document.getElementById('inputPesoHoy').value);
+  if(isNaN(peso) || peso <= 0){ alert('Ingresá un peso válido.'); return; }
+
+  const historial = leerJSON(CLAVE_HISTORIAL_PESO_LOCAL, []);
+  const hoy = hoyISO();
+  const existente = historial.findIndex(p => p.fecha === hoy);
+  if(existente >= 0) historial[existente].pesoKg = peso;
+  else historial.push({ fecha:hoy, pesoKg:peso });
+  escribirJSON(CLAVE_HISTORIAL_PESO_LOCAL, historial);
+
+  // También actualiza el peso local usado como fallback de perfil (si no hay Plan de Ciclos)
+  localStorage.setItem('nutricion_peso_kg', peso);
+
+  document.getElementById('inputPesoHoy').value = '';
+  renderizarEvolucionPeso();
+  renderizarTodo();
+}
+
+function obtenerHistorialPesoCombinado(){
+  const local = leerJSON(CLAVE_HISTORIAL_PESO_LOCAL, []);
+  const compartido = (leerJSON('entrenamiento_perfil', {}).historialPeso) || [];
+  const mapa = {};
+  local.forEach(p => mapa[p.fecha] = p.pesoKg);
+  compartido.forEach(p => mapa[p.fecha] = p.pesoKg); // el compartido (Plan de Ciclos) tiene prioridad si hay ambos
+  return Object.keys(mapa).sort().map(fecha => ({ fecha, pesoKg:mapa[fecha] }));
+}
+
+function renderizarEvolucionPeso(){
+  const puntos = obtenerHistorialPesoCombinado();
+  const cont = document.getElementById('contenidoEvolucionPeso');
+  if(puntos.length === 0){
+    cont.innerHTML = '<div class="vacio">Todavía no hay peso registrado.</div>';
+    return;
+  }
+  if(puntos.length === 1){
+    cont.innerHTML = `<p class="detalle">Un solo registro: ${puntos[0].pesoKg}kg (${puntos[0].fecha}). Agregá más para ver la curva.</p>`;
+    return;
+  }
+
+  const pesos = puntos.map(p => p.pesoKg);
+  const min = Math.min(...pesos) - 0.5;
+  const max = Math.max(...pesos) + 0.5;
+  const anchoSVG = 320, altoSVG = 140, margen = 24;
+  const escalaX = i => margen + (i / (puntos.length - 1)) * (anchoSVG - margen * 2);
+  const escalaY = v => altoSVG - margen - ((v - min) / (max - min)) * (altoSVG - margen * 2);
+
+  const path = puntos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${escalaX(i)} ${escalaY(p.pesoKg)}`).join(' ');
+  const puntosCirculos = puntos.map((p, i) => `<circle cx="${escalaX(i)}" cy="${escalaY(p.pesoKg)}" r="3" fill="#5B6E4F"/>`).join('');
+
+  cont.innerHTML = `
+    <svg viewBox="0 0 ${anchoSVG} ${altoSVG}" style="width:100%; margin-top:10px;">
+      <path d="${path}" fill="none" stroke="#5B6E4F" stroke-width="2"/>
+      ${puntosCirculos}
+    </svg>
+    <div class="fila" style="font-size:.75rem; color:var(--tinta-suave);">
+      <span>${puntos[0].fecha}: ${puntos[0].pesoKg}kg</span>
+      <span>${puntos[puntos.length-1].fecha}: ${puntos[puntos.length-1].pesoKg}kg</span>
+    </div>
+  `;
+}
+
+// ---------- Carencias/excesos acumulados (últimos 14 días) ----------
+function renderizarCarencias(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const fechas = Object.keys(registro).sort().reverse().slice(0, 14);
+  const cont = document.getElementById('contenidoCarencias');
+
+  const conteoBajo = {}, conteoAlto = {}, diasConDatos = [];
+
+  fechas.forEach(fecha => {
+    const acumulado = calcularAcumuladoNutrientesDia(fecha);
+    const claves = Object.keys(acumulado);
+    if(claves.length === 0) return;
+    diasConDatos.push(fecha);
+    claves.forEach(et => {
+      const pct = Math.round((acumulado[et].valor / acumulado[et].dv) * 100);
+      if(pct < 50) conteoBajo[et] = (conteoBajo[et] || 0) + 1;
+      if(pct > 200) conteoAlto[et] = (conteoAlto[et] || 0) + 1;
+    });
+  });
+
+  if(diasConDatos.length === 0){
+    cont.innerHTML = '<div class="vacio">No hay suficientes días con datos de USDA todavía.</div>';
+    return;
+  }
+
+  const mitad = Math.ceil(diasConDatos.length / 2);
+  const bajosFrecuentes = Object.keys(conteoBajo).filter(et => conteoBajo[et] >= mitad);
+  const altosFrecuentes = Object.keys(conteoAlto).filter(et => conteoAlto[et] >= mitad);
+
+  let html = `<p class="detalle">Analizados ${diasConDatos.length} día(s) con datos de USDA de los últimos 14.</p>`;
+
+  if(bajosFrecuentes.length === 0 && altosFrecuentes.length === 0){
+    html += '<div class="vacio">Nada se repite lo suficiente como para prestarle atención especial — buena señal.</div>';
+  }else{
+    if(bajosFrecuentes.length > 0){
+      html += `
+        <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:10px;">
+          ⚠ Bajo el 50% en ${mitad}+ de esos días: <b>${bajosFrecuentes.map(et => `${et} (${conteoBajo[et]}/${diasConDatos.length})`).join(', ')}</b>.
+          Esto sí es un patrón, no un día aislado — vale la pena mirarlo en una consulta, sobre todo si es Hierro, Vitamina A/D/E/K.
+        </div>
+      `;
+    }
+    if(altosFrecuentes.length > 0){
+      html += `
+        <div class="aviso" style="background:#2A2238; color:#D9C9F0; margin-top:10px;">
+          ⚠ Sobre el 200% en ${mitad}+ de esos días: <b>${altosFrecuentes.map(et => `${et} (${conteoAlto[et]}/${diasConDatos.length})`).join(', ')}</b>.
+          Acá sí aplica la advertencia de exceso sostenido — comentalo en una consulta si seguís viendo esto en las próximas semanas.
+        </div>
+      `;
+    }
+  }
+
+  cont.innerHTML = html;
 }
 
 // ---------- Objetivo de peso ----------
@@ -1394,9 +1543,10 @@ function guardarFactorProteina(valor){
   renderizarNutrientesDia();
 }
 
-function calcularAcumuladoNutrientesDia(){
+function calcularAcumuladoNutrientesDia(fecha){
+  fecha = fecha || hoyISO();
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
-  const items = registro[hoyISO()] || [];
+  const items = registro[fecha] || [];
   const acumulado = {};
   items.forEach(item => {
     (item.nutrientes || []).forEach(n => {
@@ -1416,23 +1566,27 @@ function calcularAcumuladoNutrientesDia(){
   return acumulado;
 }
 
-function renderizarNutrientesDia(){
-  const acumulado = calcularAcumuladoNutrientesDia();
+function renderizarNutrientesDia(fecha){
+  fecha = fecha || hoyISO();
+  const esHoy = fecha === hoyISO();
+  const acumulado = calcularAcumuladoNutrientesDia(fecha);
   const claves = Object.keys(acumulado);
   const contenedor = document.getElementById('contenidoNutrientesDia');
 
+  const tituloFecha = esHoy ? '' : `<p class="detalle" style="font-weight:700; margin-bottom:6px;">${new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</p>`;
+
   const peso = obtenerPesoPerfil();
   const factor = obtenerFactorProteina();
-  const controlProteina = `
+  const controlProteina = tituloFecha + `
     <div class="campo" style="border-bottom:1px solid var(--borde); padding-bottom:12px; margin-bottom:12px;">
       <label>Objetivo de proteínas (g por kg de peso corporal)</label>
       <input type="number" step="0.1" id="inputFactorProteina" value="${factor}" onchange="guardarFactorProteina(this.value)">
-      <p class="detalle">${peso ? `Peso cargado en Plan de Ciclos: ${peso}kg → objetivo ${Math.round(peso*factor)}g/día` : 'No hay peso cargado en Plan de Ciclos (entrenamiento_perfil) — usando 50g genérico hasta que lo cargues ahí.'}</p>
+      <p class="detalle">${peso ? `Peso cargado: ${peso}kg → objetivo ${Math.round(peso*factor)}g/día` : 'No hay peso cargado — usando 50g genérico hasta que lo cargues en ⚙️.'}</p>
     </div>
   `;
 
   if(claves.length === 0){
-    contenedor.innerHTML = controlProteina + '<div class="vacio">Todavía no hay alimentos de USDA registrados hoy.</div>';
+    contenedor.innerHTML = controlProteina + `<div class="vacio">Sin alimentos de USDA ${esHoy ? 'hoy' : 'ese día'}.</div>`;
     return;
   }
 
@@ -1448,7 +1602,7 @@ function renderizarNutrientesDia(){
 
   const resumenBajos = bajos.length === 0 ? '' : `
     <div class="aviso" style="background:#3A2A22; color:#E8C9B8;">
-      ⚠ Por debajo del 50% hoy: <b>${bajos.join(', ')}</b>.
+      ⚠ Por debajo del 50% ${esHoy ? 'hoy' : 'ese día'}: <b>${bajos.join(', ')}</b>.
       Esto es una estimación dietaria, no un diagnóstico — para confirmar si realmente falta algo hace falta un análisis de sangre, sobre todo si se repite varios días seguidos.
       ${bajosSensibles.length > 0 ? `<br><br>Ojo en particular con <b>${bajosSensibles.join(', ')}</b>: son de las que conviene confirmar con análisis antes de suplementar — el exceso sostenido de vitaminas liposolubles (A/D/E/K) se acumula en el cuerpo, y el de hierro es difícil de eliminar y puede ser dañino.` : ''}
     </div>
@@ -1456,7 +1610,7 @@ function renderizarNutrientesDia(){
 
   const resumenAltos = altos.length === 0 ? '' : `
     <div class="aviso" style="background:#2A2238; color:#D9C9F0;">
-      ⚠ Muy por encima del 100% hoy: <b>${altos.join(', ')}</b>.
+      ⚠ Muy por encima del 100% ${esHoy ? 'hoy' : 'ese día'}: <b>${altos.join(', ')}</b>.
       Un día puntual con una porción grande de algún alimento concentrado (como nueces de Brasil y el selenio) no es preocupante — el riesgo real aparece si el exceso se sostiene día tras día, no en una sola jornada. Si notás que se repite seguido, vale la pena comentarlo en una consulta.
     </div>
   `;
@@ -2101,7 +2255,15 @@ function abrirDiaHistorial(fecha){
     <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalGuardadas')">+ Desde comida guardada</button>
     <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalAlimentoUSDA')" style="margin-top:6px;">+ Desde USDA</button>
     <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalRecientes')" style="margin-top:6px;">+ Desde recientes/frecuentes</button>
+    <button class="btn btn-secundario" onclick="verNutrientesDeFecha('${fecha}')" style="margin-top:12px;">Ver % de nutrientes de ese día</button>
   `;
+}
+
+function verNutrientesDeFecha(fecha){
+  cerrarModal('modalHistorial');
+  abrirModal('modalNutrientesDia');
+  renderizarNutrientesDia(fecha);
+  document.getElementById('resultadoSugerencia').innerHTML = '';
 }
 
 function agregarABackdate(fecha, modalDestino){
@@ -2200,6 +2362,8 @@ function abrirModal(id){
   }
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
   if(id === 'modalHistorial') renderizarHistorial();
+  if(id === 'modalEvolucionPeso') renderizarEvolucionPeso();
+  if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalConfig'){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
