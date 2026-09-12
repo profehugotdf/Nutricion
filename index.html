@@ -928,13 +928,69 @@ function calcularTMB(){
   return Math.round(sexo === 'F' ? base - 161 : base + 5);
 }
 
+// ---------- Gasto de entrenamiento SIN pasar por Plan de Ciclos (lee sesiones crudas directo) ----------
+const CLAVES_SESIONES_CRUDAS = {
+  correr: 'correr_sesiones',
+  bici: 'bici_sesiones',
+  kayak: 'kayak_sesiones',
+  fuerza: 'fuerza_sesiones'
+};
+
+function extraerPulsoYDuracion(sesion){
+  const pulso = sesion.pulsoPromedio ?? sesion.hrAvg ?? sesion.pulsoMedio ?? sesion.hrPromedio ?? null;
+  let duracionMin = null;
+  if(typeof sesion.duracionSeg === 'number') duracionMin = sesion.duracionSeg / 60;
+  else if(typeof sesion.duracionMin === 'number') duracionMin = sesion.duracionMin;
+  else if(typeof sesion.duracionMs === 'number') duracionMin = sesion.duracionMs / 60000;
+  else if(typeof sesion.duracion === 'number') duracionMin = sesion.duracion / 60; // asumiendo segundos
+  return { pulso, duracionMin };
+}
+
+function calcularKcalKeytel(pulso, duracionMin, peso, edad, sexo){
+  if(!pulso || !duracionMin || !peso || !edad || !sexo) return null;
+  const base = sexo === 'F'
+    ? (-20.4022 + 0.4472*pulso - 0.1263*peso + 0.074*edad)
+    : (-55.0969 + 0.6309*pulso + 0.1988*peso + 0.2017*edad);
+  const kcalPorMin = base / 4.184;
+  return Math.max(0, Math.round(kcalPorMin * duracionMin));
+}
+
+function calcularGastoHoyDirecto(){
+  const perfil = obtenerPerfilEfectivo();
+  const hoy = hoyISO();
+  const registroCompartido = leerJSON('entrenamiento_forma_registro', []);
+  const idsYaConCalorias = new Set(
+    registroCompartido.filter(r => r.fecha === hoy && typeof r.calorias === 'number').map(r => r.id)
+  );
+  let totalDirecto = 0;
+
+  Object.entries(CLAVES_SESIONES_CRUDAS).forEach(([deporte, clave]) => {
+    const sesiones = leerJSON(clave, []);
+    sesiones.forEach(s => {
+      const fechaSesion = (s.fecha || (s.inicioISO || '').slice(0,10));
+      if(fechaSesion !== hoy) return;
+      if(s.id && idsYaConCalorias.has(s.id)) return; // ya la contó Plan de Ciclos, no duplicar
+      const { pulso, duracionMin } = extraerPulsoYDuracion(s);
+      const kcal = calcularKcalKeytel(pulso, duracionMin, perfil.pesoKg, perfil.edad, perfil.sexo);
+      if(kcal) totalDirecto += kcal;
+    });
+  });
+
+  return totalDirecto;
+}
+
 // ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
 function calcularGastoHoy(){
   const registro = leerJSON(CLAVE_FORMA, []);
   const hoy = hoyISO();
-  return registro
+  const yaCalculadoPorPlanDeCiclos = registro
     .filter(r => r.fecha === hoy && typeof r.calorias === 'number')
     .reduce((acc, r) => acc + r.calorias, 0);
+
+  // Lo que Plan de Ciclos todavía no calculó, lo calculamos acá mismo (sin depender de abrirlo)
+  const calculadoDirecto = calcularGastoHoyDirecto();
+
+  return yaCalculadoPorPlanDeCiclos + calculadoDirecto;
 }
 
 // ---------- Registro diario de comidas ----------
