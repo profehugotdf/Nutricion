@@ -958,6 +958,13 @@ function calcularKcalKeytel(pulso, duracionMin, peso, edad, sexo){
 
 
 // ---------- Gasto calórico del día (leído de entrenamiento_forma_registro) ----------
+function fechaLocalDeISO(iso){
+  if(!iso) return null;
+  const d = new Date(iso);
+  if(isNaN(d)) return null;
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
 function calcularGastoHoyPorDeporte(){
   const perfil = obtenerPerfilEfectivo();
   const hoy = hoyISO();
@@ -976,7 +983,7 @@ function calcularGastoHoyPorDeporte(){
   Object.entries(CLAVES_SESIONES_CRUDAS).forEach(([deporte, clave]) => {
     const sesiones = leerJSON(clave, []);
     sesiones.forEach(s => {
-      const fechaSesion = (s.fecha || (s.inicioISO || '').slice(0,10));
+      const fechaSesion = fechaLocalDeISO(s.inicioISO || s.fecha);
       if(fechaSesion !== hoy) return;
       if(s.id && idsYaConCalorias.has(s.id)) return;
       const { pulso, duracionMin } = extraerPulsoYDuracion(s);
