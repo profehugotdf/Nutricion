@@ -321,6 +321,15 @@
   </div>
 </div>
 
+<!-- Modal: historial de días anteriores -->
+<div class="modal-fondo" id="fondoHistorial">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalHistorial')">✕</button>
+    <h3>Historial</h3>
+    <div id="contenidoHistorial"></div>
+  </div>
+</div>
+
 <!-- Modal: % de nutrientes del día -->
 <div class="modal-fondo" id="fondoNutrientesDia">
   <div class="modal">
@@ -497,7 +506,7 @@
 <nav class="tabs">
   <button class="activo"><span class="icono-tab">📋</span>Hoy</button>
   <button onclick="abrirModal('modalGuardadas')"><span class="icono-tab">🍽️</span>Guardadas</button>
-  <button><span class="icono-tab">📊</span>Historial</button>
+  <button onclick="abrirModal('modalHistorial')"><span class="icono-tab">📊</span>Historial</button>
 </nav>
 
 <script>
@@ -757,12 +766,18 @@ function calcularGastoHoy(){
 
 // ---------- Registro diario de comidas ----------
 function agregarAlRegistroHoy(item){
+  const fecha = fechaActivaRegistro || hoyISO();
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
-  const hoy = hoyISO();
-  if(!registro[hoy]) registro[hoy] = [];
-  registro[hoy].push({ categoria: categoriaActual, ...item, hora: new Date().toISOString() });
+  if(!registro[fecha]) registro[fecha] = [];
+  registro[fecha].push({ categoria: categoriaActual, ...item, hora: new Date().toISOString() });
   escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
   renderizarTodo();
+
+  if(fechaActivaRegistro){
+    const fechaUsada = fechaActivaRegistro;
+    fechaActivaRegistro = null;
+    setTimeout(() => { abrirModal('modalHistorial'); abrirDiaHistorial(fechaUsada); }, 50);
+  }
 }
 
 function totalConsumidoHoy(){
@@ -2035,12 +2050,75 @@ function confirmarReregistro(){
   cerrarModal('modalRecientes');
 }
 
+// ---------- Historial: ver/editar días anteriores, agregar algo olvidado ----------
+let fechaActivaRegistro = null; // cuando está seteada, agregarAlRegistroHoy escribe ahí en vez de hoy
+let fechaHistorialActual = null;
+
+function renderizarHistorial(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const fechas = Object.keys(registro).sort().reverse();
+  const cont = document.getElementById('contenidoHistorial');
+  if(fechas.length === 0){
+    cont.innerHTML = '<div class="vacio">Todavía no hay días registrados.</div>';
+    return;
+  }
+  cont.innerHTML = fechas.map(f => {
+    const items = registro[f] || [];
+    const total = items.reduce((acc, i) => acc + (i.kcal || 0), 0);
+    return `
+      <div class="comida-item" onclick="abrirDiaHistorial('${f}')">
+        <div>
+          <div class="nombre">${new Date(f+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</div>
+          <div class="detalle">${items.length} ítem(s)</div>
+        </div>
+        <div class="kcal">${total} kcal</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function abrirDiaHistorial(fecha){
+  fechaHistorialActual = fecha;
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[fecha] || [];
+  const cont = document.getElementById('contenidoHistorial');
+
+  cont.innerHTML = `
+    <button class="btn btn-secundario" onclick="renderizarHistorial()" style="margin-bottom:10px;">← Volver al historial</button>
+    <h3 style="font-size:1rem;">${new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</h3>
+    <div class="lista-comidas">
+      ${items.length === 0 ? '<div class="vacio">Sin registros ese día.</div>' : items.map((i, idx) => `
+        <div class="comida-item" onclick="abrirEdicionRegistro(${idx}, '${fecha}')">
+          <div>
+            <div class="nombre">${i.nombre}</div>
+            <div class="detalle">${i.categoria || ''} · ${i.origen || ''}</div>
+          </div>
+          <div class="kcal">${i.kcal} kcal</div>
+        </div>
+      `).join('')}
+    </div>
+    <p class="aviso" style="margin-top:12px;">¿Te olvidaste de cargar algo ese día? Elegí cómo agregarlo:</p>
+    <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalGuardadas')">+ Desde comida guardada</button>
+    <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalAlimentoUSDA')" style="margin-top:6px;">+ Desde USDA</button>
+    <button class="btn btn-secundario" onclick="agregarABackdate('${fecha}', 'modalRecientes')" style="margin-top:6px;">+ Desde recientes/frecuentes</button>
+  `;
+}
+
+function agregarABackdate(fecha, modalDestino){
+  fechaActivaRegistro = fecha;
+  cerrarModal('modalHistorial');
+  alert(`Lo que registres ahora se va a cargar en el día ${fecha}, no hoy.`);
+  abrirModal(modalDestino);
+}
+
 // ---------- Editar / borrar registro del día ----------
 let idxRegistroEnEdicion = null;
+let fechaRegistroEnEdicion = null;
 
-function abrirEdicionRegistro(idx){
+function abrirEdicionRegistro(idx, fecha){
+  fechaRegistroEnEdicion = fecha || hoyISO();
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
-  const items = registro[hoyISO()] || [];
+  const items = registro[fechaRegistroEnEdicion] || [];
   const item = items[idx];
   if(!item) return;
   idxRegistroEnEdicion = idx;
@@ -2069,6 +2147,16 @@ function abrirEdicionRegistro(idx){
   abrirModal('modalEditarRegistro');
 }
 
+function volverTrasEdicion(){
+  cerrarModal('modalEditarRegistro');
+  if(fechaRegistroEnEdicion && fechaRegistroEnEdicion !== hoyISO()){
+    abrirModal('modalHistorial');
+    abrirDiaHistorial(fechaRegistroEnEdicion);
+  }else{
+    renderizarTodo();
+  }
+}
+
 function guardarEdicionRegistro(){
   if(idxRegistroEnEdicion === null) return;
   const nombre = document.getElementById('editarNombre').value.trim();
@@ -2077,16 +2165,15 @@ function guardarEdicionRegistro(){
   if(!nombre || isNaN(kcal)){ alert('Completá nombre y calorías.'); return; }
 
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
-  const hoy = hoyISO();
-  if(registro[hoy] && registro[hoy][idxRegistroEnEdicion]){
-    registro[hoy][idxRegistroEnEdicion].nombre = nombre;
-    registro[hoy][idxRegistroEnEdicion].kcal = kcal;
-    registro[hoy][idxRegistroEnEdicion].categoria = categoria;
+  const fecha = fechaRegistroEnEdicion || hoyISO();
+  if(registro[fecha] && registro[fecha][idxRegistroEnEdicion]){
+    registro[fecha][idxRegistroEnEdicion].nombre = nombre;
+    registro[fecha][idxRegistroEnEdicion].kcal = kcal;
+    registro[fecha][idxRegistroEnEdicion].categoria = categoria;
     escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
   }
   idxRegistroEnEdicion = null;
-  cerrarModal('modalEditarRegistro');
-  renderizarTodo();
+  volverTrasEdicion();
 }
 
 function borrarRegistro(){
@@ -2094,14 +2181,13 @@ function borrarRegistro(){
   if(!confirm('¿Eliminar este registro?')) return;
 
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
-  const hoy = hoyISO();
-  if(registro[hoy]){
-    registro[hoy].splice(idxRegistroEnEdicion, 1);
+  const fecha = fechaRegistroEnEdicion || hoyISO();
+  if(registro[fecha]){
+    registro[fecha].splice(idxRegistroEnEdicion, 1);
     escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
   }
   idxRegistroEnEdicion = null;
-  cerrarModal('modalEditarRegistro');
-  renderizarTodo();
+  volverTrasEdicion();
 }
 
 // ---------- Modales ----------
@@ -2113,6 +2199,7 @@ function abrirModal(id){
     document.getElementById('resultadoSugerencia').innerHTML = '';
   }
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
+  if(id === 'modalHistorial') renderizarHistorial();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalConfig'){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
