@@ -235,45 +235,23 @@
     <h3>Nueva comida guardada</h3>
     <div class="campo">
       <label>Nombre</label>
-      <input type="text" id="nuevaNombre" placeholder="Ej: Pollo con salsa mostaza-miel">
+      <input type="text" id="nuevaNombre" placeholder="Ej: Kéfir de agua diluido">
     </div>
     <div class="campo">
-      <label>Peso de la porción (g) — opcional, para poder generar etiqueta</label>
-      <input type="number" id="nuevaPesoPorcion" placeholder="Ej: 100">
+      <label>Peso/volumen de la porción (g o ml) — opcional, para poder generar etiqueta</label>
+      <input type="number" id="nuevaPesoPorcion" placeholder="Ej: 200">
     </div>
     <div class="campo">
       <label>Calorías (kcal)</label>
-      <input type="number" id="nuevaKcal" placeholder="Ej: 372">
+      <input type="number" id="nuevaKcal" placeholder="Ej: 16">
     </div>
-    <div class="campo">
-      <label>Proteínas (g) — opcional</label>
-      <input type="number" id="nuevaProt" placeholder="Ej: 56">
-    </div>
-    <div class="campo">
-      <label>Grasas totales (g) — opcional</label>
-      <input type="number" id="nuevaGrasas" placeholder="Ej: 3">
-    </div>
-    <div class="campo">
-      <label>Grasas saturadas (g) — opcional</label>
-      <input type="number" id="nuevaGrasasSat" placeholder="Ej: 1">
-    </div>
-    <div class="campo">
-      <label>Carbohidratos (g) — opcional</label>
-      <input type="number" id="nuevaCarbos" placeholder="Ej: 4">
-    </div>
-    <div class="campo">
-      <label>Sodio (mg) — opcional</label>
-      <input type="number" id="nuevaSodio" placeholder="Ej: 110">
-    </div>
-    <div class="campo">
-      <label>Cafeína (mg) — opcional</label>
-      <input type="number" id="nuevaCafeina" placeholder="Ej: 30">
-    </div>
-    <div class="campo">
-      <label>Magnesio (mg) — opcional (para suplementos)</label>
-      <input type="number" id="nuevaMagnesio" placeholder="Ej: 300">
-    </div>
-    <button class="btn btn-primario" onclick="guardarComidaManual()">Guardar</button>
+
+    <h3 style="font-size:.95rem; margin-top:16px;">Nutrientes (los que tengas — sin límite)</h3>
+    <div id="listaNutrientesManual"></div>
+    <button class="btn btn-secundario" onclick="agregarFilaNutrienteManual()">+ Agregar nutriente</button>
+    <p class="aviso">Escribí el nombre en español (proteínas, calcio, vitamina c, hierro, folato…) — la app lo reconoce solo para sumarlo al panel de % diarios. Si escribís algo que no reconoce, igual queda guardado, pero no va a contar para ese panel.</p>
+
+    <button class="btn btn-primario" onclick="guardarComidaManual()" style="margin-top:12px;">Guardar</button>
   </div>
 </div>
 
@@ -1177,27 +1155,79 @@ function registrarGuardada(idx){
   cerrarModal('modalGuardadas');
 }
 
+// ---------- Diccionario ES→interno para nutrientes cargados a mano (mismo sistema que matchValorDiario) ----------
+const DICCIONARIO_NUTRIENTES_ES = {
+  'proteinas':'Protein', 'proteína':'Protein', 'proteínas':'Protein',
+  'grasas totales':'Total lipid', 'grasas':'Total lipid', 'lipidos totales':'Total lipid', 'lípidos totales':'Total lipid',
+  'grasas saturadas':'Fatty acids, total saturated', 'grasas saturados':'Fatty acids, total saturated',
+  'carbohidratos':'Carbohydrate, by difference', 'carbohidratos totales':'Carbohydrate, by difference',
+  'fibra':'Fiber, total dietary', 'fibra dietetica':'Fiber, total dietary', 'fibra dietética':'Fiber, total dietary', 'fibra alimentaria':'Fiber, total dietary',
+  'colesterol':'Cholesterol',
+  'sodio':'Sodium', 'calcio':'Calcium', 'hierro':'Iron', 'magnesio':'Magnesium',
+  'fosforo':'Phosphorus', 'fósforo':'Phosphorus', 'potasio':'Potassium', 'zinc':'Zinc',
+  'cobre':'Copper', 'manganeso':'Manganese', 'selenio':'Selenium',
+  'vitamina c':'Vitamin C', 'tiamina':'Thiamin', 'vitamina b1':'Thiamin',
+  'riboflavina':'Riboflavin', 'vitamina b2':'Riboflavin',
+  'niacina':'Niacin', 'vitamina b3':'Niacin',
+  'acido pantotenico':'Pantothenic acid', 'ácido pantoténico':'Pantothenic acid', 'vitamina b5':'Pantothenic acid',
+  'vitamina b6':'Vitamin B-6', 'folato':'Folate', 'vitamina b9':'Folate', 'acido folico':'Folate', 'ácido fólico':'Folate',
+  'vitamina b12':'Vitamin B-12', 'vitamina a':'Vitamin A, RAE', 'vitamina d':'Vitamin D',
+  'vitamina e':'Vitamin E', 'vitamina k':'Vitamin K', 'cafeina':'Caffeine', 'cafeína':'Caffeine',
+  'azucares':'Sugars, total', 'azúcares':'Sugars, total', 'azucares totales':'Sugars, total', 'azúcares totales':'Sugars, total',
+};
+
+function traducirNutrienteManual(nombreEs){
+  const clave = normalizarTexto(nombreEs.trim());
+  return DICCIONARIO_NUTRIENTES_ES[clave] || nombreEs.trim();
+}
+
+// ---------- Filas dinámicas de nutrientes en "Nueva comida guardada" ----------
+let nutrientesNuevaComida = [];
+
+function agregarFilaNutrienteManual(){
+  nutrientesNuevaComida.push({ nombreEs:'', valor:'', unidad:'mg' });
+  renderizarFilasNutrientesManual();
+}
+
+function quitarFilaNutrienteManual(idx){
+  nutrientesNuevaComida.splice(idx, 1);
+  renderizarFilasNutrientesManual();
+}
+
+function actualizarFilaNutrienteManual(idx, campo, valor){
+  nutrientesNuevaComida[idx][campo] = valor;
+}
+
+function renderizarFilasNutrientesManual(){
+  const cont = document.getElementById('listaNutrientesManual');
+  cont.innerHTML = nutrientesNuevaComida.map((n, idx) => `
+    <div class="fila" style="gap:6px; margin-bottom:6px;">
+      <input type="text" value="${n.nombreEs}" oninput="actualizarFilaNutrienteManual(${idx}, 'nombreEs', this.value)" placeholder="Ej: Calcio" style="flex:2; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <input type="number" value="${n.valor}" oninput="actualizarFilaNutrienteManual(${idx}, 'valor', this.value)" placeholder="Valor" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <select onchange="actualizarFilaNutrienteManual(${idx}, 'unidad', this.value)" style="flex:1; padding:6px 4px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <option value="mg" ${n.unidad==='mg'?'selected':''}>mg</option>
+        <option value="g" ${n.unidad==='g'?'selected':''}>g</option>
+        <option value="µg" ${n.unidad==='µg'?'selected':''}>µg</option>
+        <option value="IU" ${n.unidad==='IU'?'selected':''}>UI</option>
+      </select>
+      <button onclick="quitarFilaNutrienteManual(${idx})" style="background:none; border:none; color:var(--tomate); font-size:1.1rem;">✕</button>
+    </div>
+  `).join('');
+}
+
 function guardarComidaManual(){
   const nombre = document.getElementById('nuevaNombre').value.trim();
   const kcal = parseFloat(document.getElementById('nuevaKcal').value);
-  const prot = parseFloat(document.getElementById('nuevaProt').value) || null;
-  const grasas = parseFloat(document.getElementById('nuevaGrasas').value);
-  const grasasSat = parseFloat(document.getElementById('nuevaGrasasSat').value);
-  const carbos = parseFloat(document.getElementById('nuevaCarbos').value);
-  const sodio = parseFloat(document.getElementById('nuevaSodio').value);
-  const cafeina = parseFloat(document.getElementById('nuevaCafeina').value);
-  const magnesio = parseFloat(document.getElementById('nuevaMagnesio').value);
   const pesoPorcion = parseFloat(document.getElementById('nuevaPesoPorcion').value) || null;
   if(!nombre || isNaN(kcal)){ alert('Completá al menos nombre y calorías.'); return; }
 
-  const nutrientes = [];
-  if(prot !== null) nutrientes.push({ nombre:'Protein', valor:prot, unidad:'g' });
-  if(!isNaN(grasas)) nutrientes.push({ nombre:'Total lipid', valor:grasas, unidad:'g' });
-  if(!isNaN(grasasSat)) nutrientes.push({ nombre:'Fatty acids, total saturated', valor:grasasSat, unidad:'g' });
-  if(!isNaN(carbos)) nutrientes.push({ nombre:'Carbohydrate, by difference', valor:carbos, unidad:'g' });
-  if(!isNaN(sodio)) nutrientes.push({ nombre:'Sodium', valor:sodio, unidad:'mg' });
-  if(!isNaN(cafeina)) nutrientes.push({ nombre:'Caffeine', valor:cafeina, unidad:'mg' });
-  if(!isNaN(magnesio)) nutrientes.push({ nombre:'Magnesium', valor:magnesio, unidad:'mg' });
+  const nutrientes = nutrientesNuevaComida
+    .filter(n => n.nombreEs.trim() && n.valor !== '' && !isNaN(parseFloat(n.valor)))
+    .map(n => ({ nombre: traducirNutrienteManual(n.nombreEs), valor: parseFloat(n.valor), unidad: n.unidad }));
+
+  let prot = null;
+  const protEntry = nutrientes.find(n => n.nombre === 'Protein');
+  if(protEntry) prot = protEntry.valor;
 
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   guardadas.push({ nombre, kcal, prot, nutrientes, pesoPorcionG:pesoPorcion });
@@ -1205,14 +1235,9 @@ function guardarComidaManual(){
 
   document.getElementById('nuevaNombre').value = '';
   document.getElementById('nuevaKcal').value = '';
-  document.getElementById('nuevaProt').value = '';
-  document.getElementById('nuevaGrasas').value = '';
-  document.getElementById('nuevaGrasasSat').value = '';
-  document.getElementById('nuevaCarbos').value = '';
-  document.getElementById('nuevaSodio').value = '';
-  document.getElementById('nuevaCafeina').value = '';
-  document.getElementById('nuevaMagnesio').value = '';
   document.getElementById('nuevaPesoPorcion').value = '';
+  nutrientesNuevaComida = [];
+  renderizarFilasNutrientesManual();
   cerrarModal('modalNuevaGuardada');
   abrirModal('modalGuardadas');
 }
@@ -2594,6 +2619,10 @@ function abrirModal(id){
   if(id === 'modalEvolucionPeso') renderizarEvolucionPeso();
   if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
+  if(id === 'modalNuevaGuardada'){
+    nutrientesNuevaComida = [];
+    renderizarFilasNutrientesManual();
+  }
   if(id === 'modalConfig'){
     document.getElementById('configApiKeyAnthropic').value = localStorage.getItem('nutricion_api_key') || '';
     document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
