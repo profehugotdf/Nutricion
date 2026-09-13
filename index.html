@@ -1401,7 +1401,7 @@ async function identificarDescripcion(){
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-6',
-        max_tokens:600,
+        max_tokens:1024,
         messages:[{
           role:'user',
           content: `Descripción de un plato: "${descripcion}". Identificá los alimentos/ingredientes mencionados, estimá gramos, calorías y macronutrientes (proteínas, grasas, carbohidratos en gramos) de cada uno según la descripción. Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total_calorias_estimadas":0,"total_proteinas_g":0,"total_grasas_g":0,"total_carbohidratos_g":0}`
@@ -1523,7 +1523,7 @@ async function identificarFoto(){
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-6',
-        max_tokens:600,
+        max_tokens:1024,
         messages:[{
           role:'user',
           content:[
