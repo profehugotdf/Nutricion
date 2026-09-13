@@ -1698,6 +1698,7 @@ function abrirEdicionGuardada(idx){
   document.getElementById('editarGuardadaNombre').value = c.nombre;
   document.getElementById('editarGuardadaPeso').value = c.pesoPorcionG || '';
   document.getElementById('editarGuardadaKcal').value = c.kcal;
+  cerrarModal('modalGuardadas');
   abrirModal('modalEditarGuardada');
 }
 
