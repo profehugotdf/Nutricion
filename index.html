@@ -2471,7 +2471,8 @@ function renderizarHistorial(){
     cont.innerHTML = '<div class="vacio">Todavía no hay días registrados.</div>';
     return;
   }
-  cont.innerHTML = fechas.map(f => {
+  const tamKB = Math.round((JSON.stringify(registro).length / 1024) * 10) / 10;
+  const listaHtml = fechas.map(f => {
     const items = registro[f] || [];
     const total = items.reduce((acc, i) => acc + (i.kcal || 0), 0);
     return `
@@ -2484,6 +2485,50 @@ function renderizarHistorial(){
       </div>
     `;
   }).join('');
+
+  cont.innerHTML = `
+    <div class="campo" style="border-bottom:1px solid var(--borde); padding-bottom:12px; margin-bottom:12px;">
+      <label>Espacio usado</label>
+      <p class="detalle">nutricion_registro_diario: ${tamKB} KB (${fechas.length} días)</p>
+      <button class="btn btn-secundario" onclick="podarDetalleNutrientesViejos()" style="margin-top:6px;">Archivar detalle de nutrientes de días viejos</button>
+    </div>
+    ${listaHtml}
+  `;
+}
+
+function podarDetalleNutrientesViejos(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const fechas = Object.keys(registro).sort().reverse();
+  const UMBRAL_DIAS_RECIENTES = 30;
+  const fechasAConservar = new Set(fechas.slice(0, UMBRAL_DIAS_RECIENTES));
+
+  let itemsAfectados = 0;
+  const antes = JSON.stringify(registro).length;
+
+  fechas.forEach(f => {
+    if(fechasAConservar.has(f)) return;
+    (registro[f] || []).forEach(item => {
+      if(item.nutrientes && item.nutrientes.length > 0){
+        item.nutrientes = [];
+        itemsAfectados++;
+      }
+    });
+  });
+
+  const despues = JSON.stringify(registro).length;
+  const liberadoKB = Math.round(((antes - despues) / 1024) * 10) / 10;
+
+  if(itemsAfectados === 0){
+    alert('No hay nada para podar — ya está todo dentro de los últimos 30 días, o no queda detalle de nutrientes en lo viejo.');
+    return;
+  }
+
+  const confirmar = confirm(`Esto va a borrar el panel de vitaminas/minerales detallado de ${itemsAfectados} registro(s) de más de ${UMBRAL_DIAS_RECIENTES} días — el nombre, kcal y categoría quedan intactos, pero esos días dejan de sumar al "% de nutrientes" o "Carencias acumuladas" si los volvés a mirar. Se libera ~${liberadoKB} KB. ¿Continuar?`);
+  if(!confirmar) return;
+
+  escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
+  alert(`Listo — se liberaron ~${liberadoKB} KB.`);
+  renderizarHistorial();
 }
 
 function abrirDiaHistorial(fecha){
