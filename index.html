@@ -218,6 +218,15 @@
   </div>
 </section>
 
+<!-- Modal: detalle completo de comida guardada -->
+<div class="modal-fondo" id="fondoDetalleGuardada">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalDetalleGuardada')">✕</button>
+    <h3>Detalle completo</h3>
+    <div id="contenidoDetalleGuardada"></div>
+  </div>
+</div>
+
 <!-- Modal: editar comida guardada -->
 <div class="modal-fondo" id="fondoEditarGuardada">
   <div class="modal">
@@ -1112,6 +1121,7 @@ function renderizarTodo(){
           <div class="nombre">${c.nombre}</div>
           <div class="detalle">${c.prot ? c.prot + 'g prot · ' : ''}toco para registrar</div>
         </div>
+        <button onclick="event.stopPropagation(); verDetalleGuardada(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:6px; font-size:.9rem;">👁️</button>
         <button onclick="event.stopPropagation(); abrirEdicionGuardada(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:6px; font-size:.9rem;">✏️</button>
         <button onclick="event.stopPropagation(); generarEtiqueta(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:8px; font-size:.9rem;">🏷️</button>
         <div class="kcal">${c.kcal} kcal</div>
@@ -1685,6 +1695,39 @@ function matchValorDiario(nombre, unidad){
   if(unidad === 'IU') return null; // evita duplicar con la versión en µg/mg del mismo nutriente
   const n = nombre.toLowerCase();
   return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
+}
+
+// ---------- Ver detalle completo de una comida guardada ----------
+function verDetalleGuardada(idx){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+  cerrarModal('modalGuardadas');
+
+  const cont = document.getElementById('contenidoDetalleGuardada');
+  const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+  (c.nutrientes || []).forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+
+  const renderGrupo = (titulo, items) => items.length === 0 ? '' : `
+    <div class="campo">
+      <label>${titulo}</label>
+      ${items.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
+    </div>
+  `;
+
+  cont.innerHTML = `
+    <div class="campo">
+      <label>${c.nombre}</label>
+      <p class="detalle" style="font-weight:700;">${c.kcal} kcal ${c.pesoPorcionG ? `por ${c.pesoPorcionG}g/ml` : ''}</p>
+    </div>
+    ${renderGrupo('Macronutrientes', grupos.macros)}
+    ${renderGrupo('Vitaminas', grupos.vitaminas)}
+    ${renderGrupo('Minerales', grupos.minerales)}
+    ${renderGrupo('Otros', grupos.otros)}
+    ${(c.nutrientes || []).length === 0 ? '<div class="vacio">No hay nutrientes detallados cargados para esta comida — solo calorías.</div>' : ''}
+  `;
+
+  abrirModal('modalDetalleGuardada');
 }
 
 // ---------- Editar / borrar comida guardada (la plantilla, no un registro del día) ----------
