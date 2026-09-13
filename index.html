@@ -1409,6 +1409,10 @@ async function identificarDescripcion(){
       })
     });
     const data = await resp.json();
+    if(!resp.ok){
+      resultadoDiv.innerHTML = `<p class="aviso">Error de la API (${resp.status}): ${data.error?.message || 'desconocido'}</p>`;
+      return;
+    }
     const texto = data.content.find(b => b.type === 'text')?.text || '{}';
     const limpio = texto.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(limpio);
@@ -1530,6 +1534,10 @@ async function identificarFoto(){
       })
     });
     const data = await resp.json();
+    if(!resp.ok){
+      resultadoDiv.innerHTML = `<p class="aviso">Error de la API (${resp.status}): ${data.error?.message || 'desconocido'}</p>`;
+      return;
+    }
     const texto = data.content.find(b => b.type === 'text')?.text || '{}';
     const limpio = texto.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(limpio);
