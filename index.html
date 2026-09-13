@@ -408,13 +408,21 @@
   <div class="modal">
     <button class="btn-cerrar" onclick="cerrarModal('modalArmarPlato')">✕</button>
     <h3>Armar plato</h3>
-    <p class="aviso">Buscá cada ingrediente en USDA (con su cantidad) y lo vas sumando al plato. Al final le ponés un nombre y lo guardás o lo registrás directo.</p>
+    <p class="aviso">Buscá cada ingrediente (con su cantidad) y lo vas sumando al plato. Al final le ponés un nombre y lo guardás o lo registrás directo.</p>
 
     <div class="campo">
-      <label>Buscar ingrediente en USDA (en inglés)</label>
+      <label>Buscar en Alimentos Argentina — SARA2 (español)</label>
+      <input type="text" id="inputBusquedaPlatoArgentina" placeholder="puerro, panceta, dulce de leche…">
+    </div>
+    <button class="btn btn-secundario" onclick="buscarArgentinaPlato()">Buscar en SARA2</button>
+    <div id="resultadosArgentinaPlato"></div>
+    <div id="seleccionArgentinaPlato"></div>
+
+    <div class="campo" style="margin-top:14px; border-top:1px solid var(--borde); padding-top:14px;">
+      <label>Buscar ingrediente en USDA (español para lo común, o inglés)</label>
       <input type="text" id="inputBusquedaPlato" placeholder="lettuce, tomato, avocado…">
     </div>
-    <button class="btn btn-secundario" onclick="buscarUSDAPlato()">Buscar</button>
+    <button class="btn btn-secundario" onclick="buscarUSDAPlato()">Buscar en USDA</button>
     <div id="resultadosUSDAPlato"></div>
     <div id="seleccionUSDAPlato"></div>
 
@@ -2121,6 +2129,70 @@ function registrarArgentina(nombreOriginal){
   document.getElementById('resultadosArgentina').innerHTML = '';
   document.getElementById('seleccionArgentina').innerHTML = '';
   cerrarModal('modalArgentina');
+}
+
+// ---------- SARA2 (Argentina) dentro de Armar plato ----------
+async function buscarArgentinaPlato(){
+  const query = document.getElementById('inputBusquedaPlatoArgentina').value.trim();
+  const resultadosDiv = document.getElementById('resultadosArgentinaPlato');
+  document.getElementById('seleccionArgentinaPlato').innerHTML = '';
+  if(!query){ alert('Escribí qué ingrediente buscás.'); return; }
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const datos = await cargarAlimentosArgentina();
+    const q = normalizarTexto(query);
+    const resultados = datos.filter(a => normalizarTexto(a.nombre).includes(q)).slice(0, 10);
+    if(resultados.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados en SARA2. Probá en USDA abajo.</p>';
+      return;
+    }
+    resultadosDiv.innerHTML = resultados.map(a => `
+      <div class="comida-item" onclick='seleccionarArgentinaPlato(${JSON.stringify(a.nombre)})'>
+        <div>
+          <div class="nombre">${a.nombre}</div>
+          <div class="detalle">${a.kcal_100g !== null ? a.kcal_100g + ' kcal/100g' : 'sin dato de energía'}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">No se pudo cargar el archivo de alimentos argentinos.</p>';
+    console.error(e);
+  }
+}
+
+function seleccionarArgentinaPlato(nombre){
+  const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombre);
+  if(!alimento) return;
+  const seleccionDiv = document.getElementById('seleccionArgentinaPlato');
+  seleccionDiv.innerHTML = `
+    <div class="campo">
+      <label>${alimento.nombre}</label>
+      <p class="detalle">${alimento.kcal_100g !== null ? alimento.kcal_100g + ' kcal / 100g' : '⚠ Sin dato de energía'}</p>
+    </div>
+    <div class="campo">
+      <label>Cantidad (gramos)</label>
+      <input type="number" id="platoGramosArgentina" placeholder="Ej: 100">
+    </div>
+    <button class="btn btn-primario" onclick='agregarIngredienteArgentinaAlPlato(${JSON.stringify(nombre)})'>Agregar al plato</button>
+  `;
+}
+
+function agregarIngredienteArgentinaAlPlato(nombreOriginal){
+  const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombreOriginal);
+  const gramos = parseFloat(document.getElementById('platoGramosArgentina').value);
+  if(isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
+  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  })));
+  platoEnConstruccion.push({ nombre: `${alimento.nombre} (${gramos}g)`, kcal, nutrientes });
+  document.getElementById('inputBusquedaPlatoArgentina').value = '';
+  document.getElementById('resultadosArgentinaPlato').innerHTML = '';
+  document.getElementById('seleccionArgentinaPlato').innerHTML = '';
+  renderizarIngredientesPlato();
 }
 
 // ---------- Alimento genérico: USDA FoodData Central ----------
