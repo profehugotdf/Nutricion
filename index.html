@@ -1419,7 +1419,7 @@ async function identificarDescripcion(){
     window._descResultado = parsed;
     renderizarDescripcionEditable();
   }catch(e){
-    resultadoDiv.innerHTML = '<p class="aviso">Error identificando la descripción. Revisá la API key.</p>';
+    resultadoDiv.innerHTML = `<p class="aviso">Error real: ${e.message || e}</p>`;
     console.error(e);
   }
 }
@@ -1544,7 +1544,7 @@ async function identificarFoto(){
     window._fotoResultado = parsed; // mutable, se edita antes de registrar
     renderizarFotoEditable();
   }catch(e){
-    resultadoDiv.innerHTML = '<p class="aviso">Error identificando la foto. Revisá la API key.</p>';
+    resultadoDiv.innerHTML = `<p class="aviso">Error real: ${e.message || e}</p>`;
     console.error(e);
   }
 }
