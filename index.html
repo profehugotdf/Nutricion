@@ -1787,18 +1787,28 @@ async function compartirTodasGuardadas(){
   if(guardadas.length === 0){ alert('No tenés comidas guardadas todavía.'); return; }
 
   const blob = new Blob([JSON.stringify(guardadas, null, 1)], { type:'application/json' });
-  const archivo = new File([blob], 'comidas-guardadas-nutricion.json', { type:'application/json' });
 
-  if(navigator.share && navigator.canShare && navigator.canShare({ files:[archivo] })){
-    try{ await navigator.share({ files:[archivo], title:'Mis comidas guardadas' }); }
-    catch(e){ /* cancelado */ }
-  }else{
+  const descargar = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'comidas-guardadas-nutricion.json';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  try{
+    const archivo = new File([blob], 'comidas-guardadas-nutricion.json', { type:'application/json' });
+    if(navigator.share && navigator.canShare && navigator.canShare({ files:[archivo] })){
+      await navigator.share({ files:[archivo], title:'Mis comidas guardadas' });
+    }else{
+      descargar();
+    }
+  }catch(e){
+    console.error(e);
+    if(e.name !== 'AbortError'){ // AbortError = el usuario canceló el share, no es un error real
+      descargar();
+    }
   }
 }
 
