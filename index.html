@@ -260,6 +260,9 @@
     <h3>Comidas guardadas</h3>
     <div class="lista-comidas" id="listaGuardadas"></div>
     <button class="btn btn-secundario" onclick="abrirModal('modalNuevaGuardada')" style="margin-top:14px;">+ Nueva comida guardada</button>
+    <button class="btn btn-secundario" onclick="compartirTodasGuardadas()" style="margin-top:8px;">📤 Compartir todas (archivo)</button>
+    <input type="file" id="inputImportarGuardadas" accept=".json" style="display:none;" onchange="importarGuardadas(this.files[0])">
+    <button class="btn btn-secundario" onclick="document.getElementById('inputImportarGuardadas').click()" style="margin-top:8px;">📥 Importar comidas guardadas</button>
   </div>
 </div>
 
@@ -1132,6 +1135,7 @@ function renderizarTodo(){
           <div class="nombre">${c.nombre}</div>
           <div class="detalle">${c.prot ? c.prot + 'g prot · ' : ''}toco para registrar</div>
         </div>
+        <button onclick="event.stopPropagation(); compartirGuardada(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:6px; font-size:.9rem;">📤</button>
         <button onclick="event.stopPropagation(); verDetalleGuardada(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:6px; font-size:.9rem;">👁️</button>
         <button onclick="event.stopPropagation(); abrirEdicionGuardada(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:6px; font-size:.9rem;">✏️</button>
         <button onclick="event.stopPropagation(); generarEtiqueta(${idx})" style="background:none; border:1px solid var(--borde); border-radius:6px; padding:6px 8px; margin-right:8px; font-size:.9rem;">🏷️</button>
@@ -1739,6 +1743,92 @@ function verDetalleGuardada(idx){
   `;
 
   abrirModal('modalDetalleGuardada');
+}
+
+// ---------- Compartir comidas guardadas ----------
+function formatearTextoComida(c){
+  let texto = `${c.nombre}\n${c.kcal} kcal${c.pesoPorcionG ? ` por ${c.pesoPorcionG}g/ml` : ''}\n\n`;
+  const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+  (c.nutrientes || []).forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+  const agregarGrupo = (titulo, items) => {
+    if(items.length === 0) return;
+    texto += `${titulo}:\n`;
+    items.forEach(n => texto += `- ${n.nombre}: ${n.valor}${n.unidad}\n`);
+    texto += '\n';
+  };
+  agregarGrupo('Macronutrientes', grupos.macros);
+  agregarGrupo('Vitaminas', grupos.vitaminas);
+  agregarGrupo('Minerales', grupos.minerales);
+  agregarGrupo('Otros', grupos.otros);
+  return texto.trim();
+}
+
+async function compartirGuardada(idx){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+  const texto = formatearTextoComida(c);
+
+  if(navigator.share){
+    try{ await navigator.share({ title:c.nombre, text:texto }); }
+    catch(e){ /* usuario canceló, no hacer nada */ }
+  }else{
+    try{
+      await navigator.clipboard.writeText(texto);
+      alert('Copiado al portapapeles (tu navegador no soporta compartir directo).');
+    }catch(e){
+      alert(texto); // último recurso: mostrarlo para copiar a mano
+    }
+  }
+}
+
+async function compartirTodasGuardadas(){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  if(guardadas.length === 0){ alert('No tenés comidas guardadas todavía.'); return; }
+
+  const blob = new Blob([JSON.stringify(guardadas, null, 1)], { type:'application/json' });
+  const archivo = new File([blob], 'comidas-guardadas-nutricion.json', { type:'application/json' });
+
+  if(navigator.share && navigator.canShare && navigator.canShare({ files:[archivo] })){
+    try{ await navigator.share({ files:[archivo], title:'Mis comidas guardadas' }); }
+    catch(e){ /* cancelado */ }
+  }else{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'comidas-guardadas-nutricion.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function importarGuardadas(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const importadas = JSON.parse(reader.result);
+      if(!Array.isArray(importadas)) throw new Error('formato inválido');
+
+      const actuales = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+      const nombresActuales = new Set(actuales.map(c => c.nombre));
+      const nuevas = importadas.filter(c => c.nombre && !nombresActuales.has(c.nombre));
+
+      if(nuevas.length === 0){
+        alert('No hay comidas nuevas para importar (todas ya existen con el mismo nombre).');
+        return;
+      }
+
+      const combinadas = actuales.concat(nuevas);
+      escribirJSON(CLAVE_COMIDAS_GUARDADAS, combinadas);
+      alert(`Se importaron ${nuevas.length} comida(s) guardada(s) nueva(s).`);
+      renderizarTodo();
+    }catch(e){
+      alert('El archivo no tiene el formato esperado.');
+      console.error(e);
+    }
+  };
+  reader.readAsText(file);
 }
 
 // ---------- Editar / borrar comida guardada (la plantilla, no un registro del día) ----------
