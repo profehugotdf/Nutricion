@@ -244,8 +244,11 @@
       <label>Calorías (kcal)</label>
       <input type="number" id="editarGuardadaKcal">
     </div>
-    <p class="aviso">Los nutrientes (proteína, vitaminas, minerales, etc.) no se editan acá — si necesitás corregirlos, borrala y volvela a cargar con "+ Nueva comida guardada".</p>
-    <button class="btn btn-primario" onclick="guardarEdicionGuardada()">Guardar cambios</button>
+    <h3 style="font-size:.95rem; margin-top:16px;">Nutrientes</h3>
+    <div id="listaNutrientesEditarGuardada"></div>
+    <button class="btn btn-secundario" onclick="agregarFilaNutrienteEditarGuardada()">+ Agregar nutriente</button>
+    <p class="aviso">Los que ya tenías cargados aparecen abajo — podés editarlos, sacarlos, o agregar uno nuevo (como Vitamina E).</p>
+    <button class="btn btn-primario" onclick="guardarEdicionGuardada()" style="margin-top:12px;">Guardar cambios</button>
     <button class="btn btn-secundario" onclick="borrarGuardada()" style="color:var(--tomate); border-color:var(--tomate); margin-top:8px;">Eliminar comida guardada</button>
   </div>
 </div>
@@ -1740,6 +1743,38 @@ function verDetalleGuardada(idx){
 
 // ---------- Editar / borrar comida guardada (la plantilla, no un registro del día) ----------
 let idxGuardadaEnEdicion = null;
+let nutrientesEditandoGuardada = [];
+
+function renderizarFilasNutrientesEditarGuardada(){
+  const cont = document.getElementById('listaNutrientesEditarGuardada');
+  cont.innerHTML = nutrientesEditandoGuardada.map((n, idx) => `
+    <div class="fila" style="gap:6px; margin-bottom:6px;">
+      <input type="text" value="${n.nombreEs}" oninput="actualizarFilaNutrienteEditarGuardada(${idx}, 'nombreEs', this.value)" placeholder="Ej: Vitamina E" style="flex:2; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <input type="number" value="${n.valor}" oninput="actualizarFilaNutrienteEditarGuardada(${idx}, 'valor', this.value)" placeholder="Valor" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <select onchange="actualizarFilaNutrienteEditarGuardada(${idx}, 'unidad', this.value)" style="flex:1; padding:6px 4px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <option value="mg" ${n.unidad==='mg'?'selected':''}>mg</option>
+        <option value="g" ${n.unidad==='g'?'selected':''}>g</option>
+        <option value="µg" ${n.unidad==='µg'?'selected':''}>µg</option>
+        <option value="IU" ${n.unidad==='IU'?'selected':''}>UI</option>
+      </select>
+      <button onclick="quitarFilaNutrienteEditarGuardada(${idx})" style="background:none; border:none; color:var(--tomate); font-size:1.1rem;">✕</button>
+    </div>
+  `).join('');
+}
+
+function agregarFilaNutrienteEditarGuardada(){
+  nutrientesEditandoGuardada.push({ nombreEs:'', valor:'', unidad:'mg' });
+  renderizarFilasNutrientesEditarGuardada();
+}
+
+function quitarFilaNutrienteEditarGuardada(idx){
+  nutrientesEditandoGuardada.splice(idx, 1);
+  renderizarFilasNutrientesEditarGuardada();
+}
+
+function actualizarFilaNutrienteEditarGuardada(idx, campo, valor){
+  nutrientesEditandoGuardada[idx][campo] = valor;
+}
 
 function abrirEdicionGuardada(idx){
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
@@ -1749,6 +1784,8 @@ function abrirEdicionGuardada(idx){
   document.getElementById('editarGuardadaNombre').value = c.nombre;
   document.getElementById('editarGuardadaPeso').value = c.pesoPorcionG || '';
   document.getElementById('editarGuardadaKcal').value = c.kcal;
+  nutrientesEditandoGuardada = (c.nutrientes || []).map(n => ({ nombreEs:n.nombre, valor:n.valor, unidad:n.unidad }));
+  renderizarFilasNutrientesEditarGuardada();
   cerrarModal('modalGuardadas');
   abrirModal('modalEditarGuardada');
 }
@@ -1760,11 +1797,18 @@ function guardarEdicionGuardada(){
   const peso = parseFloat(document.getElementById('editarGuardadaPeso').value) || null;
   if(!nombre || isNaN(kcal)){ alert('Completá nombre y calorías.'); return; }
 
+  const nutrientes = nutrientesEditandoGuardada
+    .filter(n => n.nombreEs.trim() && n.valor !== '' && !isNaN(parseFloat(n.valor)))
+    .map(n => ({ nombre: traducirNutrienteManual(n.nombreEs), valor: parseFloat(n.valor), unidad: n.unidad }));
+
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
   if(guardadas[idxGuardadaEnEdicion]){
     guardadas[idxGuardadaEnEdicion].nombre = nombre;
     guardadas[idxGuardadaEnEdicion].kcal = kcal;
     guardadas[idxGuardadaEnEdicion].pesoPorcionG = peso;
+    guardadas[idxGuardadaEnEdicion].nutrientes = nutrientes;
+    const protEntry = nutrientes.find(n => n.nombre === 'Protein');
+    guardadas[idxGuardadaEnEdicion].prot = protEntry ? protEntry.valor : null;
     escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
   }
   idxGuardadaEnEdicion = null;
