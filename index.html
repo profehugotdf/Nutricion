@@ -358,6 +358,17 @@
     </div>
     <div id="contenidoEvolucionPeso"></div>
     <p class="aviso">Si ya usás Plan de Ciclos para cargar el peso, ese historial también se muestra acá combinado — no hace falta cargarlo dos veces.</p>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">% de grasa corporal</h3>
+    <div class="campo">
+      <label>Registrar % de hoy (bioimpedancia/calibre)</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputGrasaHoy" step="0.1" placeholder="Ej: 18.5" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarGrasaHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionGrasa"></div>
+    <p class="aviso">Cada vez que cargues una medición nueva, se actualiza sola en "⚙️ API keys" para que el gasto basal (Katch-McArdle) use siempre el dato más reciente.</p>
   </div>
 </div>
 
@@ -514,7 +525,8 @@
     <div class="campo" style="border-top:1px solid var(--borde); padding-top:12px; margin-top:12px;">
       <label>Datos personales (solo si usás esta app sola, sin Plan de Ciclos)</label>
       <input type="number" id="configPeso" placeholder="Peso (kg)">
-      <input type="number" id="configEdad" placeholder="Edad" style="margin-top:6px;">
+      <label style="display:block; font-size:.78rem; color:var(--tinta-suave); margin:8px 0 4px;">Fecha de nacimiento (para calcular la edad siempre actualizada)</label>
+      <input type="date" id="configFechaNacimiento">
       <select id="configSexo" style="margin-top:6px;">
         <option value="">Sexo (para el cálculo de TMB)</option>
         <option value="M">Masculino</option>
@@ -735,6 +747,62 @@ function renderizarCarencias(){
   cont.innerHTML = html;
 }
 
+// ---------- Evolución de % de grasa corporal ----------
+const CLAVE_HISTORIAL_GRASA_LOCAL = 'nutricion_historial_grasa'; // [{fecha, grasaPct}]
+
+function guardarGrasaHoy(){
+  const grasa = parseFloat(document.getElementById('inputGrasaHoy').value);
+  if(isNaN(grasa) || grasa <= 0 || grasa > 70){ alert('Ingresá un % de grasa válido.'); return; }
+
+  const historial = leerJSON(CLAVE_HISTORIAL_GRASA_LOCAL, []);
+  const hoy = hoyISO();
+  const existente = historial.findIndex(p => p.fecha === hoy);
+  if(existente >= 0) historial[existente].grasaPct = grasa;
+  else historial.push({ fecha:hoy, grasaPct:grasa });
+  escribirJSON(CLAVE_HISTORIAL_GRASA_LOCAL, historial);
+
+  // Actualiza el valor usado por Katch-McArdle con la medición más reciente
+  localStorage.setItem('nutricion_grasa_corporal_pct', grasa);
+
+  document.getElementById('inputGrasaHoy').value = '';
+  renderizarEvolucionGrasa();
+  renderizarTodo();
+}
+
+function renderizarEvolucionGrasa(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_GRASA_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  const cont = document.getElementById('contenidoEvolucionGrasa');
+  if(puntos.length === 0){
+    cont.innerHTML = '<div class="vacio">Todavía no hay % de grasa registrado.</div>';
+    return;
+  }
+  if(puntos.length === 1){
+    cont.innerHTML = `<p class="detalle">Un solo registro: ${puntos[0].grasaPct}% (${puntos[0].fecha}). Agregá más para ver la curva.</p>`;
+    return;
+  }
+
+  const valores = puntos.map(p => p.grasaPct);
+  const min = Math.min(...valores) - 1;
+  const max = Math.max(...valores) + 1;
+  const anchoSVG = 320, altoSVG = 140, margen = 24;
+  const escalaX = i => margen + (i / (puntos.length - 1)) * (anchoSVG - margen * 2);
+  const escalaY = v => altoSVG - margen - ((v - min) / (max - min)) * (altoSVG - margen * 2);
+
+  const path = puntos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${escalaX(i)} ${escalaY(p.grasaPct)}`).join(' ');
+  const puntosCirculos = puntos.map((p, i) => `<circle cx="${escalaX(i)}" cy="${escalaY(p.grasaPct)}" r="3" fill="#C98A1E"/>`).join('');
+
+  cont.innerHTML = `
+    <svg viewBox="0 0 ${anchoSVG} ${altoSVG}" style="width:100%; margin-top:10px;">
+      <path d="${path}" fill="none" stroke="#C98A1E" stroke-width="2"/>
+      ${puntosCirculos}
+    </svg>
+    <div class="fila" style="font-size:.75rem; color:var(--tinta-suave);">
+      <span>${puntos[0].fecha}: ${puntos[0].grasaPct}%</span>
+      <span>${puntos[puntos.length-1].fecha}: ${puntos[puntos.length-1].grasaPct}%</span>
+    </div>
+  `;
+}
+
 // ---------- Objetivo de peso ----------
 const CLAVE_OBJETIVO_PESO = 'nutricion_objetivo_peso'; // {pesoObjetivo, ritmoSemanal, fechaInicio, pesoInicial}
 const RITMOS_DISPONIBLES = [0.5, 0.75, 1];
@@ -880,16 +948,28 @@ function seleccionarCategoria(c){
   renderizarChipsCategoria();
 }
 
+function calcularEdadDesdeFecha(fechaNacimiento){
+  if(!fechaNacimiento) return null;
+  const nac = new Date(fechaNacimiento + 'T00:00:00');
+  if(isNaN(nac)) return null;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - nac.getFullYear();
+  const noCumplioAunEsteAño = (hoy.getMonth() < nac.getMonth()) ||
+    (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate());
+  if(noCumplioAunEsteAño) edad--;
+  return edad;
+}
+
 // ---------- Perfil efectivo: usa entrenamiento_perfil (Plan de Ciclos) si existe, si no datos propios de Nutrición ----------
 function obtenerPerfilEfectivo(){
   const compartido = leerJSON('entrenamiento_perfil', {});
   const pesoLocal = parseFloat(localStorage.getItem('nutricion_peso_kg'));
-  const edadLocal = parseInt(localStorage.getItem('nutricion_edad'));
+  const edadLocal = calcularEdadDesdeFecha(localStorage.getItem('nutricion_fecha_nacimiento'));
   const sexoLocal = localStorage.getItem('nutricion_sexo');
 
   return {
     pesoKg: compartido.pesoKg || (isNaN(pesoLocal) ? null : pesoLocal),
-    edad: compartido.edad || (isNaN(edadLocal) ? null : edadLocal),
+    edad: compartido.edad || edadLocal,
     sexo: compartido.sexo || sexoLocal || null,
     fuente: compartido.pesoKg ? 'plan-de-ciclos' : 'local'
   };
@@ -3050,7 +3130,10 @@ function abrirModal(id){
   }
   if(id === 'modalRecientes') renderizarRecientesYFrecuentes();
   if(id === 'modalHistorial') renderizarHistorial();
-  if(id === 'modalEvolucionPeso') renderizarEvolucionPeso();
+  if(id === 'modalEvolucionPeso'){
+    renderizarEvolucionPeso();
+    renderizarEvolucionGrasa();
+  }
   if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalNuevaGuardada'){
@@ -3062,7 +3145,7 @@ function abrirModal(id){
     document.getElementById('configApiKeyUSDA').value = localStorage.getItem('nutricion_usda_api_key') || '';
     document.getElementById('configAltura').value = localStorage.getItem('nutricion_altura_cm') || '';
     document.getElementById('configPeso').value = localStorage.getItem('nutricion_peso_kg') || '';
-    document.getElementById('configEdad').value = localStorage.getItem('nutricion_edad') || '';
+    document.getElementById('configFechaNacimiento').value = localStorage.getItem('nutricion_fecha_nacimiento') || '';
     document.getElementById('configSexo').value = localStorage.getItem('nutricion_sexo') || '';
     document.getElementById('configGrasaCorporal').value = localStorage.getItem('nutricion_grasa_corporal_pct') || '';
   }
@@ -3073,14 +3156,14 @@ function guardarConfigKeys(){
   const usda = document.getElementById('configApiKeyUSDA').value.trim();
   const altura = document.getElementById('configAltura').value.trim();
   const peso = document.getElementById('configPeso').value.trim();
-  const edad = document.getElementById('configEdad').value.trim();
+  const fechaNacimiento = document.getElementById('configFechaNacimiento').value;
   const sexo = document.getElementById('configSexo').value;
   const grasaCorporal = document.getElementById('configGrasaCorporal').value.trim();
   if(anthropic) localStorage.setItem('nutricion_api_key', anthropic); else localStorage.removeItem('nutricion_api_key');
   if(usda) localStorage.setItem('nutricion_usda_api_key', usda); else localStorage.removeItem('nutricion_usda_api_key');
   if(altura) localStorage.setItem('nutricion_altura_cm', altura); else localStorage.removeItem('nutricion_altura_cm');
   if(peso) localStorage.setItem('nutricion_peso_kg', peso); else localStorage.removeItem('nutricion_peso_kg');
-  if(edad) localStorage.setItem('nutricion_edad', edad); else localStorage.removeItem('nutricion_edad');
+  if(fechaNacimiento) localStorage.setItem('nutricion_fecha_nacimiento', fechaNacimiento); else localStorage.removeItem('nutricion_fecha_nacimiento');
   if(sexo) localStorage.setItem('nutricion_sexo', sexo); else localStorage.removeItem('nutricion_sexo');
   if(grasaCorporal) localStorage.setItem('nutricion_grasa_corporal_pct', grasaCorporal); else localStorage.removeItem('nutricion_grasa_corporal_pct');
   cerrarModal('modalConfig');
