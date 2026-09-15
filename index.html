@@ -522,6 +522,11 @@
       </select>
       <p class="detalle">Si Plan de Ciclos ya tiene estos datos cargados, esta app usa esos primero — esto es solo un respaldo para uso 100% independiente.</p>
     </div>
+    <div class="campo">
+      <label>% de grasa corporal (opcional — si lo tenés, el cálculo de gasto basal es más preciso)</label>
+      <input type="number" step="0.1" id="configGrasaCorporal" placeholder="Ej: 18.5">
+      <p class="detalle">Con este dato, la app usa la fórmula Katch-McArdle en vez de Mifflin-St Jeor — más precisa para gente con más masa muscular que el promedio.</p>
+    </div>
     <button class="btn btn-primario" onclick="guardarConfigKeys()">Guardar</button>
     <button class="btn btn-secundario" onclick="exportarBackupNutricion()" style="margin-top:8px;">📥 Exportar datos de Nutrición (backup)</button>
   </div>
@@ -953,8 +958,17 @@ function calcularKcalPorPasos(pasosTotales){
 // ---------- Gasto basal (TMB) — Mifflin-St Jeor ----------
 function calcularTMB(){
   const perfil = obtenerPerfilEfectivo();
-  const altura = parseFloat(localStorage.getItem('nutricion_altura_cm'));
   const peso = perfil.pesoKg;
+  const grasaCorporalPct = parseFloat(localStorage.getItem('nutricion_grasa_corporal_pct'));
+
+  // Katch-McArdle: más preciso si hay % de grasa corporal cargado (usa masa magra real)
+  if(peso && !isNaN(grasaCorporalPct)){
+    const masaMagra = peso * (1 - grasaCorporalPct / 100);
+    return Math.round(370 + 21.6 * masaMagra);
+  }
+
+  // Respaldo: Mifflin-St Jeor (peso/altura/edad/sexo)
+  const altura = parseFloat(localStorage.getItem('nutricion_altura_cm'));
   const edad = perfil.edad;
   const sexo = perfil.sexo;
   if(!peso || !edad || !sexo || !altura) return null;
@@ -1073,7 +1087,10 @@ function renderizarTodo(){
   const balance = gastoTotal - consumido;
 
   document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
-  document.getElementById('totalTMB').textContent = tmb !== null ? `${tmb} kcal` : 'Cargá altura en ⚙️';
+  const usandoKatchMcArdle = !isNaN(parseFloat(localStorage.getItem('nutricion_grasa_corporal_pct')));
+  document.getElementById('totalTMB').textContent = tmb !== null
+    ? `${tmb} kcal${usandoKatchMcArdle ? ' (Katch-McArdle)' : ''}`
+    : 'Cargá altura en ⚙️';
   document.getElementById('totalGasto').textContent = `${gastoEntrenamiento} kcal`;
   const porDeporte = calcularGastoHoyPorDeporte();
   const ICONOS_DEPORTE = { correr:'🏃', bici:'🚴', kayak:'🚣', fuerza:'🏋️' };
@@ -3047,6 +3064,7 @@ function abrirModal(id){
     document.getElementById('configPeso').value = localStorage.getItem('nutricion_peso_kg') || '';
     document.getElementById('configEdad').value = localStorage.getItem('nutricion_edad') || '';
     document.getElementById('configSexo').value = localStorage.getItem('nutricion_sexo') || '';
+    document.getElementById('configGrasaCorporal').value = localStorage.getItem('nutricion_grasa_corporal_pct') || '';
   }
 }
 
@@ -3057,12 +3075,14 @@ function guardarConfigKeys(){
   const peso = document.getElementById('configPeso').value.trim();
   const edad = document.getElementById('configEdad').value.trim();
   const sexo = document.getElementById('configSexo').value;
+  const grasaCorporal = document.getElementById('configGrasaCorporal').value.trim();
   if(anthropic) localStorage.setItem('nutricion_api_key', anthropic); else localStorage.removeItem('nutricion_api_key');
   if(usda) localStorage.setItem('nutricion_usda_api_key', usda); else localStorage.removeItem('nutricion_usda_api_key');
   if(altura) localStorage.setItem('nutricion_altura_cm', altura); else localStorage.removeItem('nutricion_altura_cm');
   if(peso) localStorage.setItem('nutricion_peso_kg', peso); else localStorage.removeItem('nutricion_peso_kg');
   if(edad) localStorage.setItem('nutricion_edad', edad); else localStorage.removeItem('nutricion_edad');
   if(sexo) localStorage.setItem('nutricion_sexo', sexo); else localStorage.removeItem('nutricion_sexo');
+  if(grasaCorporal) localStorage.setItem('nutricion_grasa_corporal_pct', grasaCorporal); else localStorage.removeItem('nutricion_grasa_corporal_pct');
   cerrarModal('modalConfig');
   renderizarTodo();
 }
