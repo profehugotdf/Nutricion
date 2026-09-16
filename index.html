@@ -170,6 +170,7 @@
   <button class="btn btn-secundario" onclick="abrirModal('modalObjetivoPeso')" style="margin-top:8px;">🎯 Objetivo de peso</button>
   <button class="btn btn-secundario" onclick="abrirModal('modalEvolucionPeso')" style="margin-top:8px;">📈 Evolución de peso</button>
   <button class="btn btn-secundario" onclick="abrirModal('modalCarencias')" style="margin-top:8px;">📊 Carencias/excesos acumulados</button>
+  <button class="btn btn-secundario" onclick="abrirModal('modalTapering')" style="margin-top:8px;">🎯 Tapering / próximo evento</button>
 </section>
 
 <section>
@@ -369,6 +370,15 @@
     </div>
     <div id="contenidoEvolucionGrasa"></div>
     <p class="aviso">Cada vez que cargues una medición nueva, se actualiza sola en "⚙️ API keys" para que el gasto basal (Katch-McArdle) use siempre el dato más reciente.</p>
+  </div>
+</div>
+
+<!-- Modal: tapering / próximo evento -->
+<div class="modal-fondo" id="fondoTapering">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalTapering')">✕</button>
+    <h3>Tapering / próximo evento</h3>
+    <div id="contenidoTapering"></div>
   </div>
 </div>
 
@@ -803,7 +813,93 @@ function renderizarEvolucionGrasa(){
   `;
 }
 
-// ---------- Objetivo de peso ----------
+// ---------- Tapering / próximo evento (leído de Plan de Ciclos) ----------
+function obtenerProximoEvento(){
+  const dato = leerJSON('entrenamiento_proximo_evento', null);
+  if(!dato || !dato.fecha) return null; // clave ausente = sin evento próximo, no es un error
+  return {
+    nombre: dato.nombreEvento || 'Próximo evento',
+    fecha: dato.fecha,
+    tipo: dato.disciplina || null
+  };
+}
+
+function diasHasta(fechaISO){
+  const hoy = new Date(hoyISO() + 'T00:00:00');
+  const fecha = new Date((fechaISO || '').slice(0,10) + 'T00:00:00');
+  if(isNaN(fecha)) return null;
+  return Math.round((fecha - hoy) / 86400000);
+}
+
+function renderizarTapering(){
+  const cont = document.getElementById('contenidoTapering');
+  const evento = obtenerProximoEvento();
+
+  if(!evento){
+    cont.innerHTML = `<div class="vacio">No tenés ningún evento futuro cargado en Plan de Ciclos (Ciclo → Evento objetivo).</div>`;
+    return;
+  }
+
+  const dias = diasHasta(evento.fecha);
+  if(dias === null || dias < 0){
+    cont.innerHTML = `<div class="vacio">El evento "${evento.nombre}" ya pasó o tiene una fecha inválida.</div>`;
+    return;
+  }
+
+  const VENTANA_TAPERING_DIAS = 10; // ventana orientativa; ajustable según disciplina
+  const enTapering = dias <= VENTANA_TAPERING_DIAS;
+
+  let html = `
+    <div class="campo">
+      <label>${evento.nombre}${evento.tipo ? ` (${evento.tipo})` : ''}</label>
+      <p class="detalle" style="font-weight:700;">Faltan ${dias} día(s) — ${enTapering ? 'estás en ventana de tapering' : 'todavía no empezó el tapering'}</p>
+    </div>
+  `;
+
+  if(enTapering){
+    const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+    const resumenDiario = leerJSON(CLAVE_RESUMEN_COMPARTIDO, {});
+    const hoy = new Date(hoyISO() + 'T00:00:00');
+    let diasConDeficitFuerte = 0, diasRevisados = 0, proteinaBajaDias = 0;
+
+    for(let i = VENTANA_TAPERING_DIAS; i >= 0; i--){
+      const f = new Date(hoy); f.setDate(f.getDate() - i);
+      const fechaStr = f.getFullYear()+'-'+String(f.getMonth()+1).padStart(2,'0')+'-'+String(f.getDate()).padStart(2,'0');
+      const resumen = resumenDiario[fechaStr];
+      if(!resumen) continue;
+      diasRevisados++;
+      if(resumen.balance > 500) diasConDeficitFuerte++; // déficit fuerte según convención (positivo=déficit)
+      const acumulado = calcularAcumuladoNutrientesDia(fechaStr);
+      if(acumulado['Proteínas'] && (acumulado['Proteínas'].valor / acumulado['Proteínas'].dv) < 0.7) proteinaBajaDias++;
+    }
+
+    if(diasRevisados === 0){
+      html += '<div class="vacio">Sin datos de Nutrición todavía en esta ventana de tapering.</div>';
+    }else{
+      html += `<p class="detalle">Revisado: ${diasRevisados} día(s) con datos en la ventana de tapering.</p>`;
+      if(diasConDeficitFuerte > 0){
+        html += `
+          <div class="aviso" style="background:#3A2A22; color:#E8C9B8;">
+            ⚠ ${diasConDeficitFuerte} día(s) con déficit fuerte (+500 kcal) durante el tapering.
+            En esta etapa el objetivo suele ser mantener o incluso subir un poco los carbohidratos (para cargar glucógeno), no sostener déficit — si estabas en plan de bajar de peso, vale la pena pausarlo hasta después del evento.
+          </div>
+        `;
+      }
+      if(proteinaBajaDias > 0){
+        html += `
+          <div class="aviso" style="background:#3A2A22; color:#E8C9B8;">
+            ⚠ ${proteinaBajaDias} día(s) con proteína por debajo del 70% del objetivo en esta ventana — importa para la recuperación previa al esfuerzo.
+          </div>
+        `;
+      }
+      if(diasConDeficitFuerte === 0 && proteinaBajaDias === 0){
+        html += '<div class="vacio">Sin señales de alerta — veníos bien en la previa.</div>';
+      }
+    }
+  }
+
+  cont.innerHTML = html;
+}
 const CLAVE_OBJETIVO_PESO = 'nutricion_objetivo_peso'; // {pesoObjetivo, ritmoSemanal, fechaInicio, pesoInicial}
 const RITMOS_DISPONIBLES = [0.5, 0.75, 1];
 let ritmoSeleccionado = 0.5;
@@ -824,6 +920,7 @@ function seleccionarRitmo(r){
   renderizarChipsRitmo();
 }
 
+// ---------- Objetivo de peso ----------
 function guardarObjetivoPeso(){
   const pesoObjetivo = parseFloat(document.getElementById('inputPesoObjetivo').value);
   if(isNaN(pesoObjetivo)){ alert('Ingresá un peso objetivo.'); return; }
@@ -3135,6 +3232,7 @@ function abrirModal(id){
     renderizarEvolucionGrasa();
   }
   if(id === 'modalCarencias') renderizarCarencias();
+  if(id === 'modalTapering') renderizarTapering();
   if(id === 'modalObjetivoPeso') renderizarObjetivoPeso();
   if(id === 'modalNuevaGuardada'){
     nutrientesNuevaComida = [];
