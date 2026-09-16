@@ -408,7 +408,7 @@
     <h3>% de requerimientos diarios</h3>
     <p class="aviso">Referencia genérica de adulto (valores diarios FDA, dieta de 2000 kcal) — no ajustada a tu edad/sexo/peso. Solo suma los alimentos registrados vía USDA, que son los que traen panel completo de nutrientes.</p>
     <div id="contenidoNutrientesDia"></div>
-    <button class="btn btn-secundario" onclick="sugerirComidaCompensatoria()" style="margin-top:14px;">💡 Sugerir plato para mañana</button>
+    <button class="btn btn-secundario" onclick="sugerirComidaCompensatoria()" style="margin-top:14px;">💡 Alimentos para compensar</button>
     <div id="resultadoSugerencia"></div>
   </div>
 </div>
@@ -2495,7 +2495,7 @@ async function sugerirComidaCompensatoria(){
         max_tokens:300,
         messages:[{
           role:'user',
-          content: `Hoy estos nutrientes quedaron bajos respecto al valor diario recomendado: ${listaBajos}. Sugerime UN plato típico de Argentina, México o Andorra, o directamente una fruta simple, que ayude a cubrir los que están más bajos mañana. Respuesta breve (máximo 4 líneas), en español rioplatense, mencionando de forma concreta por qué ese plato/fruta ayuda con esos nutrientes puntuales. No hace falta exactitud, es solo una orientación.`
+          content: `Hoy estos nutrientes quedaron bajos respecto al valor diario recomendado: ${listaBajos}. Para cada uno de los 2-3 nutrientes MÁS bajos, dame 2-3 alimentos simples y fáciles de conseguir en Argentina que lo aporten bien (no un plato armado, sino ingredientes sueltos que se puedan combinar como quiera cada día). Formato: una línea por nutriente, con el nutriente en negrita seguido de los alimentos separados por coma. Máximo 5 líneas en total, español rioplatense. No hace falta exactitud, es solo una orientación.`
         }]
       })
     });
