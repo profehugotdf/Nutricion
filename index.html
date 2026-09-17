@@ -391,6 +391,27 @@
     </div>
     <div id="contenidoEvolucionOsea"></div>
     <p class="aviso">Mismo origen que el % de grasa (bioimpedancia) — válido para ver tu propia tendencia en el tiempo, no como medición clínica exacta.</p>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de cintura (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — a la altura del ombligo, al final de una espiración normal</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputCinturaHoy" step="0.5" placeholder="Ej: 98" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarCinturaHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionCintura"></div>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — a mitad de muslo, entre pliegue inguinal y rótula</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputMusloHoy" step="0.5" placeholder="Ej: 58" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarMusloHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionMuslo"></div>
+    <p class="aviso">Cintura y muslo son marcadores de riesgo cardiometabólico — cintura alta y muslo bajo se asocian con más riesgo, independientemente uno del otro.</p>
   </div>
 </div>
 
@@ -821,6 +842,58 @@ function guardarMedicionHoy(clave, valorKey, inputId, valor, contUpdate){
   escribirJSON(clave, historial);
   document.getElementById(inputId).value = '';
   contUpdate();
+}
+
+// ---------- Perímetro de cintura (riesgo cardiometabólico) ----------
+const CLAVE_HISTORIAL_CINTURA_LOCAL = 'nutricion_historial_cintura';
+
+function guardarCinturaHoy(){
+  const valor = parseFloat(document.getElementById('inputCinturaHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 200){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_CINTURA_LOCAL, 'cinturaCm', 'inputCinturaHoy', valor, renderizarEvolucionCintura);
+}
+
+function renderizarEvolucionCintura(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_CINTURA_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'cinturaCm', 'contenidoEvolucionCintura', '#B4432E', 'cm');
+
+  if(puntos.length > 0){
+    const ultimo = puntos[puntos.length - 1].cinturaCm;
+    const sexo = obtenerPerfilEfectivo().sexo;
+    const umbral = sexo === 'F' ? 88 : 102;
+    if(ultimo >= umbral){
+      document.getElementById('contenidoEvolucionCintura').innerHTML += `
+        <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
+          ⚠ Tu último registro (${ultimo}cm) está en o por encima del umbral de riesgo cardiometabólico elevado (${umbral}cm) — es un marcador poblacional general, no un diagnóstico individual.
+        </div>
+      `;
+    }
+  }
+}
+
+// ---------- Perímetro de muslo (riesgo cardiometabólico, al revés que cintura) ----------
+const CLAVE_HISTORIAL_MUSLO_LOCAL = 'nutricion_historial_muslo';
+
+function guardarMusloHoy(){
+  const valor = parseFloat(document.getElementById('inputMusloHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 100){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_MUSLO_LOCAL, 'musloCm', 'inputMusloHoy', valor, renderizarEvolucionMuslo);
+}
+
+function renderizarEvolucionMuslo(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_MUSLO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'musloCm', 'contenidoEvolucionMuslo', '#5B6E4F', 'cm');
+
+  if(puntos.length > 0){
+    const ultimo = puntos[puntos.length - 1].musloCm;
+    if(ultimo < 60){
+      document.getElementById('contenidoEvolucionMuslo').innerHTML += `
+        <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
+          ⚠ Tu último registro (${ultimo}cm) está por debajo del umbral asociado a mayor riesgo (60cm) en estudios poblacionales — acá el sentido es al revés que en cintura: menor perímetro, más riesgo.
+        </div>
+      `;
+    }
+  }
 }
 
 // ---------- % de masa muscular ----------
@@ -3326,6 +3399,8 @@ function abrirModal(id){
     renderizarEvolucionGrasa();
     renderizarEvolucionMusculo();
     renderizarEvolucionOsea();
+    renderizarEvolucionCintura();
+    renderizarEvolucionMuslo();
   }
   if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalTapering') renderizarTapering();
