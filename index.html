@@ -422,6 +422,17 @@
       </div>
     </div>
     <div id="contenidoEvolucionMuslo"></div>
+    <p class="aviso">Estándar ISAK, útil para comparar con protocolos deportivos — el umbral de riesgo poblacional (60cm) se aplica más abajo, en "Muslo superior/máximo", que es probablemente el sitio que usaron los estudios que fijaron ese número.</p>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo superior/máximo (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — 1cm por debajo del pliegue glúteo, cinta horizontal</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputMusloSuperiorHoy" step="0.5" placeholder="Ej: 60" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarMusloSuperiorHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionMusloSuperior"></div>
     <p class="aviso">Cintura y muslo son marcadores de riesgo cardiometabólico — cintura alta y muslo bajo se asocian con más riesgo, independientemente uno del otro. El umbral de muslo (60cm) es una referencia poblacional aproximada, no calibrada a este sitio ISAK exacto — lo que más importa es medir siempre en el mismo punto para ver tu propia tendencia.</p>
   </div>
 </div>
@@ -947,13 +958,27 @@ function guardarMusloHoy(){
 function renderizarEvolucionMuslo(){
   const puntos = leerJSON(CLAVE_HISTORIAL_MUSLO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
   dibujarGraficoEvolucion(puntos, 'musloCm', 'contenidoEvolucionMuslo', '#5B6E4F', 'cm');
+}
+
+// ---------- Perímetro de muslo superior/máximo (probable sitio del umbral de riesgo poblacional) ----------
+const CLAVE_HISTORIAL_MUSLO_SUPERIOR_LOCAL = 'nutricion_historial_muslo_superior';
+
+function guardarMusloSuperiorHoy(){
+  const valor = parseFloat(document.getElementById('inputMusloSuperiorHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 100){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_MUSLO_SUPERIOR_LOCAL, 'musloSuperiorCm', 'inputMusloSuperiorHoy', valor, renderizarEvolucionMusloSuperior);
+}
+
+function renderizarEvolucionMusloSuperior(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_MUSLO_SUPERIOR_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'musloSuperiorCm', 'contenidoEvolucionMusloSuperior', '#8A7A9B', 'cm');
 
   if(puntos.length > 0){
-    const ultimo = puntos[puntos.length - 1].musloCm;
+    const ultimo = puntos[puntos.length - 1].musloSuperiorCm;
     if(ultimo < 60){
-      document.getElementById('contenidoEvolucionMuslo').innerHTML += `
+      document.getElementById('contenidoEvolucionMusloSuperior').innerHTML += `
         <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
-          ⚠ Tu último registro (${ultimo}cm) está por debajo del umbral asociado a mayor riesgo (60cm) en estudios poblacionales — acá el sentido es al revés que en cintura: menor perímetro, más riesgo.
+          ⚠ Tu último registro (${ultimo}cm) está por debajo del umbral asociado a mayor riesgo (60cm) en estudios poblacionales — acá el sentido es al revés que en cintura: menor perímetro, más riesgo. No tengo certeza absoluta de que este sea el sitio exacto que usó el estudio original, tomalo como orientativo.
         </div>
       `;
     }
@@ -3465,6 +3490,7 @@ function abrirModal(id){
     renderizarEvolucionOsea();
     renderizarEvolucionCintura();
     renderizarEvolucionMuslo();
+    renderizarEvolucionMusloSuperior();
     renderizarEvolucionCadera();
     renderizarICC();
   }
