@@ -370,6 +370,27 @@
     </div>
     <div id="contenidoEvolucionGrasa"></div>
     <p class="aviso">Cada vez que cargues una medición nueva, se actualiza sola en "⚙️ API keys" para que el gasto basal (Katch-McArdle) use siempre el dato más reciente.</p>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">% de masa muscular</h3>
+    <div class="campo">
+      <label>Registrar % de hoy</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputMusculoHoy" step="0.1" placeholder="Ej: 35.3" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarMusculoHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionMusculo"></div>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Masa ósea (kg)</h3>
+    <div class="campo">
+      <label>Registrar de hoy</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputOseaHoy" step="0.1" placeholder="Ej: 3.4" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarOseaHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionOsea"></div>
+    <p class="aviso">Mismo origen que el % de grasa (bioimpedancia) — válido para ver tu propia tendencia en el tiempo, no como medición clínica exacta.</p>
   </div>
 </div>
 
@@ -755,6 +776,79 @@ function renderizarCarencias(){
   }
 
   cont.innerHTML = html;
+}
+
+// ---------- Gráfico genérico (reusado por grasa, músculo, ósea) ----------
+function dibujarGraficoEvolucion(puntos, valorKey, containerId, color, unidad){
+  const cont = document.getElementById(containerId);
+  if(puntos.length === 0){
+    cont.innerHTML = `<div class="vacio">Todavía no hay datos registrados.</div>`;
+    return;
+  }
+  if(puntos.length === 1){
+    cont.innerHTML = `<p class="detalle">Un solo registro: ${puntos[0][valorKey]}${unidad} (${puntos[0].fecha}). Agregá más para ver la curva.</p>`;
+    return;
+  }
+
+  const valores = puntos.map(p => p[valorKey]);
+  const min = Math.min(...valores) - (Math.max(...valores) - Math.min(...valores) || 1) * 0.1;
+  const max = Math.max(...valores) + (Math.max(...valores) - Math.min(...valores) || 1) * 0.1;
+  const anchoSVG = 320, altoSVG = 140, margen = 24;
+  const escalaX = i => margen + (i / (puntos.length - 1)) * (anchoSVG - margen * 2);
+  const escalaY = v => altoSVG - margen - ((v - min) / (max - min)) * (altoSVG - margen * 2);
+
+  const path = puntos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${escalaX(i)} ${escalaY(p[valorKey])}`).join(' ');
+  const puntosCirculos = puntos.map((p, i) => `<circle cx="${escalaX(i)}" cy="${escalaY(p[valorKey])}" r="3" fill="${color}"/>`).join('');
+
+  cont.innerHTML = `
+    <svg viewBox="0 0 ${anchoSVG} ${altoSVG}" style="width:100%; margin-top:10px;">
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>
+      ${puntosCirculos}
+    </svg>
+    <div class="fila" style="font-size:.75rem; color:var(--tinta-suave);">
+      <span>${puntos[0].fecha}: ${puntos[0][valorKey]}${unidad}</span>
+      <span>${puntos[puntos.length-1].fecha}: ${puntos[puntos.length-1][valorKey]}${unidad}</span>
+    </div>
+  `;
+}
+
+function guardarMedicionHoy(clave, valorKey, inputId, valor, contUpdate){
+  const historial = leerJSON(clave, []);
+  const hoy = hoyISO();
+  const existente = historial.findIndex(p => p.fecha === hoy);
+  if(existente >= 0) historial[existente][valorKey] = valor;
+  else historial.push({ fecha:hoy, [valorKey]:valor });
+  escribirJSON(clave, historial);
+  document.getElementById(inputId).value = '';
+  contUpdate();
+}
+
+// ---------- % de masa muscular ----------
+const CLAVE_HISTORIAL_MUSCULO_LOCAL = 'nutricion_historial_musculo';
+
+function guardarMusculoHoy(){
+  const valor = parseFloat(document.getElementById('inputMusculoHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 80){ alert('Ingresá un % válido.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_MUSCULO_LOCAL, 'musculoPct', 'inputMusculoHoy', valor, renderizarEvolucionMusculo);
+}
+
+function renderizarEvolucionMusculo(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_MUSCULO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'musculoPct', 'contenidoEvolucionMusculo', '#5B6E4F', '%');
+}
+
+// ---------- Masa ósea (kg) ----------
+const CLAVE_HISTORIAL_OSEA_LOCAL = 'nutricion_historial_osea';
+
+function guardarOseaHoy(){
+  const valor = parseFloat(document.getElementById('inputOseaHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 10){ alert('Ingresá un valor válido en kg.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_OSEA_LOCAL, 'oseaKg', 'inputOseaHoy', valor, renderizarEvolucionOsea);
+}
+
+function renderizarEvolucionOsea(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_OSEA_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'oseaKg', 'contenidoEvolucionOsea', '#8A7A9B', 'kg');
 }
 
 // ---------- Evolución de % de grasa corporal ----------
@@ -3230,6 +3324,8 @@ function abrirModal(id){
   if(id === 'modalEvolucionPeso'){
     renderizarEvolucionPeso();
     renderizarEvolucionGrasa();
+    renderizarEvolucionMusculo();
+    renderizarEvolucionOsea();
   }
   if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalTapering') renderizarTapering();
