@@ -413,6 +413,17 @@
     <div id="contenidoEvolucionCadera"></div>
     <div id="contenidoICC"></div>
 
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de pantorrilla (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — en el punto de mayor circunferencia, de pie, cinta horizontal</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputPantorrillaHoy" step="0.5" placeholder="Ej: 36" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarPantorrillaHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionPantorrilla"></div>
+    <p class="aviso">Screening de baja masa muscular (SARC-CalF) — umbral de referencia &lt;31cm. Es solo un primer filtro; el criterio clínico real de sarcopenia parte de la fuerza de prensión (dinamómetro de mano), no de un perímetro. Un valor bajo acá es motivo para consultarlo, no un diagnóstico.</p>
+
     <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo superior/máximo (cm)</h3>
     <div class="campo">
       <label>Registrar de hoy — 1cm por debajo del pliegue glúteo, cinta horizontal</label>
@@ -933,6 +944,31 @@ function renderizarEvolucionCintura(){
       document.getElementById('contenidoEvolucionCintura').innerHTML += `
         <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
           ⚠ Tu último registro (${ultimo}cm) está en o por encima del umbral de riesgo cardiometabólico elevado (${umbral}cm) — es un marcador poblacional general, no un diagnóstico individual.
+        </div>
+      `;
+    }
+  }
+}
+
+// ---------- Perímetro de pantorrilla (screening de baja masa muscular, SARC-CalF) ----------
+const CLAVE_HISTORIAL_PANTORRILLA_LOCAL = 'nutricion_historial_pantorrilla';
+
+function guardarPantorrillaHoy(){
+  const valor = parseFloat(document.getElementById('inputPantorrillaHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 80){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_PANTORRILLA_LOCAL, 'pantorrillaCm', 'inputPantorrillaHoy', valor, renderizarEvolucionPantorrilla);
+}
+
+function renderizarEvolucionPantorrilla(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_PANTORRILLA_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'pantorrillaCm', 'contenidoEvolucionPantorrilla', '#5B6E4F', 'cm');
+
+  if(puntos.length > 0){
+    const ultimo = puntos[puntos.length - 1].pantorrillaCm;
+    if(ultimo < 31){
+      document.getElementById('contenidoEvolucionPantorrilla').innerHTML += `
+        <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
+          ⚠ Tu último registro (${ultimo}cm) está por debajo del umbral de screening (31cm) — vale la pena comentarlo en una consulta y, si es posible, medir fuerza de prensión con dinamómetro para confirmar o descartar.
         </div>
       `;
     }
@@ -3469,6 +3505,7 @@ function abrirModal(id){
     renderizarEvolucionOsea();
     renderizarEvolucionCintura();
     renderizarEvolucionMusloSuperior();
+    renderizarEvolucionPantorrilla();
     renderizarEvolucionCadera();
     renderizarICC();
   }
