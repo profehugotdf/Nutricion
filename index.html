@@ -893,12 +893,16 @@ function renderizarICC(){
   else{ categoria = 'Alto / Obesidad central'; color = 'var(--tomate)'; }
 
   const fechasDistintas = ultimaCintura.fecha !== ultimaCadera.fecha;
+  const cinturaParaNormal = Math.round(umbrales.bajo * ultimaCadera.caderaCm * 10) / 10;
+  const cinturaParaModerado = Math.round(umbrales.moderado * ultimaCadera.caderaCm * 10) / 10;
+  const diferencia = Math.round((ultimaCintura.cinturaCm - cinturaParaNormal) * 10) / 10;
 
   cont.innerHTML = `
     <div class="campo" style="border-top:1px solid var(--borde); padding-top:12px; margin-top:12px;">
       <label>Índice Cintura-Cadera (ICC)</label>
       <p class="detalle" style="font-weight:700; color:${color};">${icc} — ${categoria}</p>
       <p class="detalle">Cintura ${ultimaCintura.cinturaCm}cm (${ultimaCintura.fecha}) / Cadera ${ultimaCadera.caderaCm}cm (${ultimaCadera.fecha})</p>
+      ${diferencia > 0 ? `<p class="detalle">Con tu cadera actual, necesitarías bajar la cintura a menos de <b>${cinturaParaNormal}cm</b> para "Bajo/Normal" (te faltan ${diferencia}cm), o a menos de <b>${cinturaParaModerado}cm</b> para al menos "Moderado".</p>` : ''}
       ${fechasDistintas ? '<p class="aviso">Las últimas mediciones de cintura y cadera son de fechas distintas — para más precisión, medí las dos el mismo día.</p>' : ''}
       <p class="aviso">Interpretalo junto al perímetro de cintura absoluto, no solo. Si tenés más desarrollo muscular en glúteos/muslos (típico en triatletas), el ICC puede salir más bajo sin que eso refleje menos riesgo real — el número no distingue músculo de grasa en la cadera.</p>
     </div>
