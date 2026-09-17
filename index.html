@@ -413,17 +413,6 @@
     <div id="contenidoEvolucionCadera"></div>
     <div id="contenidoICC"></div>
 
-    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo medio — ISAK (cm)</h3>
-    <div class="campo">
-      <label>Registrar de hoy — punto medio entre pliegue inguinal y borde superior de la rótula, cinta perpendicular al fémur, sin comprimir</label>
-      <div class="fila" style="gap:8px;">
-        <input type="number" id="inputMusloHoy" step="0.5" placeholder="Ej: 58" style="flex:1;">
-        <button class="btn btn-primario" onclick="guardarMusloHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
-      </div>
-    </div>
-    <div id="contenidoEvolucionMuslo"></div>
-    <p class="aviso">Estándar ISAK, útil para comparar con protocolos deportivos — el umbral de riesgo poblacional (60cm) se aplica más abajo, en "Muslo superior/máximo", que es probablemente el sitio que usaron los estudios que fijaron ese número.</p>
-
     <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo superior/máximo (cm)</h3>
     <div class="campo">
       <label>Registrar de hoy — 1cm por debajo del pliegue glúteo, cinta horizontal</label>
@@ -944,20 +933,6 @@ function renderizarEvolucionCintura(){
       `;
     }
   }
-}
-
-// ---------- Perímetro de muslo (riesgo cardiometabólico, al revés que cintura) ----------
-const CLAVE_HISTORIAL_MUSLO_LOCAL = 'nutricion_historial_muslo';
-
-function guardarMusloHoy(){
-  const valor = parseFloat(document.getElementById('inputMusloHoy').value);
-  if(isNaN(valor) || valor <= 0 || valor > 100){ alert('Ingresá un valor válido en cm.'); return; }
-  guardarMedicionHoy(CLAVE_HISTORIAL_MUSLO_LOCAL, 'musloCm', 'inputMusloHoy', valor, renderizarEvolucionMuslo);
-}
-
-function renderizarEvolucionMuslo(){
-  const puntos = leerJSON(CLAVE_HISTORIAL_MUSLO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
-  dibujarGraficoEvolucion(puntos, 'musloCm', 'contenidoEvolucionMuslo', '#5B6E4F', 'cm');
 }
 
 // ---------- Perímetro de muslo superior/máximo (probable sitio del umbral de riesgo poblacional) ----------
@@ -3489,7 +3464,6 @@ function abrirModal(id){
     renderizarEvolucionMusculo();
     renderizarEvolucionOsea();
     renderizarEvolucionCintura();
-    renderizarEvolucionMuslo();
     renderizarEvolucionMusloSuperior();
     renderizarEvolucionCadera();
     renderizarICC();
