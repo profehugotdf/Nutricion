@@ -402,16 +402,27 @@
     </div>
     <div id="contenidoEvolucionCintura"></div>
 
-    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo (cm)</h3>
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de cadera (cm)</h3>
     <div class="campo">
-      <label>Registrar de hoy — a mitad de muslo, entre pliegue inguinal y rótula</label>
+      <label>Registrar de hoy — a la altura de la máxima protrusión glútea, de pie, cinta horizontal</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputCaderaHoy" step="0.5" placeholder="Ej: 105" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarCaderaHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionCadera"></div>
+    <div id="contenidoICC"></div>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo medio — ISAK (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — punto medio entre pliegue inguinal y borde superior de la rótula, cinta perpendicular al fémur, sin comprimir</label>
       <div class="fila" style="gap:8px;">
         <input type="number" id="inputMusloHoy" step="0.5" placeholder="Ej: 58" style="flex:1;">
         <button class="btn btn-primario" onclick="guardarMusloHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
       </div>
     </div>
     <div id="contenidoEvolucionMuslo"></div>
-    <p class="aviso">Cintura y muslo son marcadores de riesgo cardiometabólico — cintura alta y muslo bajo se asocian con más riesgo, independientemente uno del otro.</p>
+    <p class="aviso">Cintura y muslo son marcadores de riesgo cardiometabólico — cintura alta y muslo bajo se asocian con más riesgo, independientemente uno del otro. El umbral de muslo (60cm) es una referencia poblacional aproximada, no calibrada a este sitio ISAK exacto — lo que más importa es medir siempre en el mismo punto para ver tu propia tendencia.</p>
   </div>
 </div>
 
@@ -844,13 +855,66 @@ function guardarMedicionHoy(clave, valorKey, inputId, valor, contUpdate){
   contUpdate();
 }
 
+// ---------- Perímetro de cadera + Índice Cintura-Cadera (ICC) ----------
+const CLAVE_HISTORIAL_CADERA_LOCAL = 'nutricion_historial_cadera';
+
+function guardarCaderaHoy(){
+  const valor = parseFloat(document.getElementById('inputCaderaHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 200){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_CADERA_LOCAL, 'caderaCm', 'inputCaderaHoy', valor, () => {
+    renderizarEvolucionCadera();
+    renderizarICC();
+  });
+}
+
+function renderizarEvolucionCadera(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_CADERA_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'caderaCm', 'contenidoEvolucionCadera', '#C98A1E', 'cm');
+}
+
+function renderizarICC(){
+  const cont = document.getElementById('contenidoICC');
+  const cinturaPuntos = leerJSON(CLAVE_HISTORIAL_CINTURA_LOCAL, []);
+  const caderaPuntos = leerJSON(CLAVE_HISTORIAL_CADERA_LOCAL, []);
+  if(cinturaPuntos.length === 0 || caderaPuntos.length === 0){
+    cont.innerHTML = '';
+    return;
+  }
+
+  const ultimaCintura = cinturaPuntos[cinturaPuntos.length - 1];
+  const ultimaCadera = caderaPuntos[caderaPuntos.length - 1];
+  const icc = Math.round((ultimaCintura.cinturaCm / ultimaCadera.caderaCm) * 100) / 100;
+  const sexo = obtenerPerfilEfectivo().sexo;
+
+  const umbrales = sexo === 'F' ? { bajo:0.80, moderado:0.85 } : { bajo:0.90, moderado:0.95 };
+  let categoria, color;
+  if(icc < umbrales.bajo){ categoria = 'Bajo / Normal'; color = 'var(--oliva)'; }
+  else if(icc <= umbrales.moderado){ categoria = 'Moderado'; color = 'var(--mostaza)'; }
+  else{ categoria = 'Alto / Obesidad central'; color = 'var(--tomate)'; }
+
+  const fechasDistintas = ultimaCintura.fecha !== ultimaCadera.fecha;
+
+  cont.innerHTML = `
+    <div class="campo" style="border-top:1px solid var(--borde); padding-top:12px; margin-top:12px;">
+      <label>Índice Cintura-Cadera (ICC)</label>
+      <p class="detalle" style="font-weight:700; color:${color};">${icc} — ${categoria}</p>
+      <p class="detalle">Cintura ${ultimaCintura.cinturaCm}cm (${ultimaCintura.fecha}) / Cadera ${ultimaCadera.caderaCm}cm (${ultimaCadera.fecha})</p>
+      ${fechasDistintas ? '<p class="aviso">Las últimas mediciones de cintura y cadera son de fechas distintas — para más precisión, medí las dos el mismo día.</p>' : ''}
+      <p class="aviso">Interpretalo junto al perímetro de cintura absoluto, no solo. Si tenés más desarrollo muscular en glúteos/muslos (típico en triatletas), el ICC puede salir más bajo sin que eso refleje menos riesgo real — el número no distingue músculo de grasa en la cadera.</p>
+    </div>
+  `;
+}
+
 // ---------- Perímetro de cintura (riesgo cardiometabólico) ----------
 const CLAVE_HISTORIAL_CINTURA_LOCAL = 'nutricion_historial_cintura';
 
 function guardarCinturaHoy(){
   const valor = parseFloat(document.getElementById('inputCinturaHoy').value);
   if(isNaN(valor) || valor <= 0 || valor > 200){ alert('Ingresá un valor válido en cm.'); return; }
-  guardarMedicionHoy(CLAVE_HISTORIAL_CINTURA_LOCAL, 'cinturaCm', 'inputCinturaHoy', valor, renderizarEvolucionCintura);
+  guardarMedicionHoy(CLAVE_HISTORIAL_CINTURA_LOCAL, 'cinturaCm', 'inputCinturaHoy', valor, () => {
+    renderizarEvolucionCintura();
+    renderizarICC();
+  });
 }
 
 function renderizarEvolucionCintura(){
@@ -3401,6 +3465,8 @@ function abrirModal(id){
     renderizarEvolucionOsea();
     renderizarEvolucionCintura();
     renderizarEvolucionMuslo();
+    renderizarEvolucionCadera();
+    renderizarICC();
   }
   if(id === 'modalCarencias') renderizarCarencias();
   if(id === 'modalTapering') renderizarTapering();
