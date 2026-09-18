@@ -2179,6 +2179,81 @@ function matchValorDiario(nombre, unidad){
   return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
 }
 
+// ---------- Revisión de consistencia de una comida guardada con Claude ----------
+async function revisarConsistenciaGuardada(idx){
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+
+  const apiKey = obtenerApiKeyAnthropic();
+  if(!apiKey) return;
+
+  const cont = document.getElementById('contenidoRevisionIA');
+  cont.innerHTML = '<p class="aviso">Revisando…</p>';
+
+  const listaNutrientes = (c.nutrientes || []).map(n => `- ${n.nombre}: ${n.valor}${n.unidad}`).join('\n');
+
+  try{
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1024,
+        messages:[{
+          role:'user',
+          content: `Revisá esta tabla nutricional de "${c.nombre}" (${c.kcal} kcal${c.pesoPorcionG ? ` por ${c.pesoPorcionG}g/ml` : ''}):\n${listaNutrientes}\n\n¿Hay valores inconsistentes entre sí, o implausibles para este alimento y esta porción (por ejemplo, mucho más alto o bajo de lo esperable)? Para cada uno que encuentres, indicá el nombre EXACTO tal como aparece arriba, tu valor sugerido más razonable, y un motivo breve. Si todo parece razonable, decilo. Respondé SOLO con JSON: {"hallazgos":[{"nombre":"","valorSugerido":0,"unidad":"","motivo":""}],"todoOk":true}`
+        }]
+      })
+    });
+    const data = await resp.json();
+    if(!resp.ok){
+      cont.innerHTML = `<p class="aviso">Error de la API (${resp.status}): ${data.error?.message || 'desconocido'}</p>`;
+      return;
+    }
+    const texto = data.content.find(b => b.type === 'text')?.text || '{}';
+    const limpio = texto.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(limpio);
+
+    if(parsed.todoOk || !parsed.hallazgos || parsed.hallazgos.length === 0){
+      cont.innerHTML = '<div class="vacio">Claude no encontró nada raro en esta tabla.</div>';
+      return;
+    }
+
+    window._revisionIAGuardadaIdx = idx;
+    cont.innerHTML = `<p class="detalle">${parsed.hallazgos.length} posible(s) inconsistencia(s) según Claude:</p>` + parsed.hallazgos.map((h, i) => `
+      <div class="aviso" style="background:#2A2238; color:#D9C9F0; margin-top:8px;">
+        <b>${h.nombre}</b>: ${h.motivo}<br>Sugerido: ${h.valorSugerido}${h.unidad}
+        <button class="btn btn-secundario" onclick='aplicarCorreccionIA(${JSON.stringify(h.nombre)}, ${h.valorSugerido}, ${JSON.stringify(h.unidad)})' style="margin-top:8px;">Aplicar este valor</button>
+      </div>
+    `).join('');
+  }catch(e){
+    cont.innerHTML = `<p class="aviso">Error real: ${e.message || e}</p>`;
+    console.error(e);
+  }
+}
+
+function aplicarCorreccionIA(nombreNutriente, valorSugerido, unidad){
+  const idx = window._revisionIAGuardadaIdx;
+  if(idx === null || idx === undefined) return;
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  const c = guardadas[idx];
+  if(!c) return;
+  const nutriente = (c.nutrientes || []).find(n => n.nombre === nombreNutriente);
+  if(nutriente){
+    nutriente.valor = valorSugerido;
+    nutriente.unidad = unidad;
+    escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
+    alert('Aplicado.');
+    verDetalleGuardada(idx);
+  }
+}
+
 // ---------- Ver detalle completo de una comida guardada ----------
 function verDetalleGuardada(idx){
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
@@ -2207,6 +2282,8 @@ function verDetalleGuardada(idx){
     ${renderGrupo('Minerales', grupos.minerales)}
     ${renderGrupo('Otros', grupos.otros)}
     ${(c.nutrientes || []).length === 0 ? '<div class="vacio">No hay nutrientes detallados cargados para esta comida — solo calorías.</div>' : ''}
+    <button class="btn btn-secundario" onclick="revisarConsistenciaGuardada(${idx})" style="margin-top:14px;">🤖 Revisar consistencia con Claude</button>
+    <div id="contenidoRevisionIA"></div>
   `;
 
   abrirModal('modalDetalleGuardada');
@@ -3279,17 +3356,30 @@ function buscarDefinicionPorNombre(nombre){
   return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
 }
 
-function revisarNutrientes(nutrientes, fuente, hallazgos){
-  (nutrientes || []).forEach(n => {
+// Alimentos naturalmente extremos en ciertos nutrientes — no marcar como error
+const EXCEPCIONES_VALOR_ALTO = [
+  { alimento:['higado','hígado','riñon','riñón'], nutrientes:['Vitamina B12','Cobre','Vitamina A'] }
+];
+
+function esExcepcionConocida(nombreAlimento, etiquetaNutriente){
+  const n = normalizarTexto(nombreAlimento);
+  return EXCEPCIONES_VALOR_ALTO.some(ex =>
+    ex.alimento.some(a => n.includes(normalizarTexto(a))) && ex.nutrientes.includes(etiquetaNutriente)
+  );
+}
+
+function revisarNutrientes(nutrientes, nombreAlimento, fuente, ref, hallazgos){
+  (nutrientes || []).forEach((n, idxNutriente) => {
     const def = buscarDefinicionPorNombre(n.nombre);
     if(!def) return;
 
     if(n.unidad !== def.unidad && n.unidad !== 'IU'){
       hallazgos.push({
         fuente, nombre:n.nombre, tipo:'unidad',
-        detalle:`Cargado en <b>${n.unidad}</b>, pero ${def.etiqueta} normalmente se mide en <b>${def.unidad}</b> — valor actual: ${n.valor}${n.unidad}. ¿Elegiste la unidad equivocada en el desplegable?`
+        detalle:`Cargado en <b>${n.unidad}</b>, pero ${def.etiqueta} normalmente se mide en <b>${def.unidad}</b> — valor actual: ${n.valor}${n.unidad}. ¿Elegiste la unidad equivocada en el desplegable?`,
+        ref, idxNutriente, unidadCorrecta:def.unidad
       });
-    }else if(n.valor > def.dv * 10){
+    }else if(n.valor > def.dv * 10 && !esExcepcionConocida(nombreAlimento, def.etiqueta)){
       const pct = Math.round((n.valor / def.dv) * 100);
       hallazgos.push({
         fuente, nombre:n.nombre, tipo:'valor',
@@ -3303,26 +3393,51 @@ function buscarErroresDeCarga(){
   const hallazgos = [];
 
   const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
-  guardadas.forEach(c => revisarNutrientes(c.nutrientes, `Comida guardada: ${c.nombre}`, hallazgos));
+  guardadas.forEach((c, idx) => {
+    revisarNutrientes(c.nutrientes, c.nombre, `Comida guardada: ${c.nombre}`, { tipo:'guardada', idx }, hallazgos);
+  });
 
   const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
   Object.keys(registro).forEach(fecha => {
-    (registro[fecha] || []).forEach(item => {
-      revisarNutrientes(item.nutrientes, `${fecha} — ${item.nombre}`, hallazgos);
+    (registro[fecha] || []).forEach((item, idx) => {
+      revisarNutrientes(item.nutrientes, item.nombre, `${fecha} — ${item.nombre}`, { tipo:'registro', fecha, idx }, hallazgos);
     });
   });
 
+  renderizarHallazgosCarga(hallazgos);
+}
+
+function renderizarHallazgosCarga(hallazgos){
   const cont = document.getElementById('contenidoErroresCarga');
   if(hallazgos.length === 0){
     cont.innerHTML = '<div class="vacio">No encontré inconsistencias de unidad ni valores fuera de rango.</div>';
     return;
   }
 
-  cont.innerHTML = `<p class="detalle">${hallazgos.length} posible(s) inconsistencia(s):</p>` + hallazgos.map(h => `
+  cont.innerHTML = `<p class="detalle">${hallazgos.length} posible(s) inconsistencia(s):</p>` + hallazgos.map((h, i) => `
     <div class="aviso" style="background:${h.tipo === 'unidad' ? '#3A2A22' : '#2A2238'}; color:${h.tipo === 'unidad' ? '#E8C9B8' : '#D9C9F0'}; margin-top:8px;">
       <b>${h.fuente}</b> — ${h.nombre}<br>${h.detalle}
+      ${h.tipo === 'unidad' ? `<button class="btn btn-secundario" onclick='corregirUnidadAutomatica(${JSON.stringify(h.ref)}, ${h.idxNutriente}, ${JSON.stringify(h.unidadCorrecta)})' style="margin-top:8px;">Corregir unidad → ${h.unidadCorrecta}</button>` : ''}
     </div>
   `).join('');
+}
+
+function corregirUnidadAutomatica(ref, idxNutriente, unidadCorrecta){
+  if(ref.tipo === 'guardada'){
+    const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+    if(guardadas[ref.idx] && guardadas[ref.idx].nutrientes[idxNutriente]){
+      guardadas[ref.idx].nutrientes[idxNutriente].unidad = unidadCorrecta;
+      escribirJSON(CLAVE_COMIDAS_GUARDADAS, guardadas);
+    }
+  }else if(ref.tipo === 'registro'){
+    const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+    if(registro[ref.fecha] && registro[ref.fecha][ref.idx] && registro[ref.fecha][ref.idx].nutrientes[idxNutriente]){
+      registro[ref.fecha][ref.idx].nutrientes[idxNutriente].unidad = unidadCorrecta;
+      escribirJSON(CLAVE_REGISTRO_DIARIO, registro);
+    }
+  }
+  buscarErroresDeCarga(); // re-escanear para reflejar la corrección
+  renderizarTodo();
 }
 
 // ---------- Historial: ver/editar días anteriores, agregar algo olvidado ----------
