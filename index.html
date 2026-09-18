@@ -3273,6 +3273,58 @@ function confirmarReregistro(){
   cerrarModal('modalRecientes');
 }
 
+// ---------- Buscador de errores de carga (unidad equivocada, valores implausibles) ----------
+function buscarDefinicionPorNombre(nombre){
+  const n = nombre.toLowerCase();
+  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
+}
+
+function revisarNutrientes(nutrientes, fuente, hallazgos){
+  (nutrientes || []).forEach(n => {
+    const def = buscarDefinicionPorNombre(n.nombre);
+    if(!def) return;
+
+    if(n.unidad !== def.unidad && n.unidad !== 'IU'){
+      hallazgos.push({
+        fuente, nombre:n.nombre, tipo:'unidad',
+        detalle:`Cargado en <b>${n.unidad}</b>, pero ${def.etiqueta} normalmente se mide en <b>${def.unidad}</b> — valor actual: ${n.valor}${n.unidad}. ¿Elegiste la unidad equivocada en el desplegable?`
+      });
+    }else if(n.valor > def.dv * 10){
+      const pct = Math.round((n.valor / def.dv) * 100);
+      hallazgos.push({
+        fuente, nombre:n.nombre, tipo:'valor',
+        detalle:`${n.valor}${n.unidad} es ${pct}% del valor diario (${def.dv}${def.unidad}) — muy alto para un solo alimento/porción. Revisá si el número o la cantidad están bien.`
+      });
+    }
+  });
+}
+
+function buscarErroresDeCarga(){
+  const hallazgos = [];
+
+  const guardadas = leerJSON(CLAVE_COMIDAS_GUARDADAS, []);
+  guardadas.forEach(c => revisarNutrientes(c.nutrientes, `Comida guardada: ${c.nombre}`, hallazgos));
+
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  Object.keys(registro).forEach(fecha => {
+    (registro[fecha] || []).forEach(item => {
+      revisarNutrientes(item.nutrientes, `${fecha} — ${item.nombre}`, hallazgos);
+    });
+  });
+
+  const cont = document.getElementById('contenidoErroresCarga');
+  if(hallazgos.length === 0){
+    cont.innerHTML = '<div class="vacio">No encontré inconsistencias de unidad ni valores fuera de rango.</div>';
+    return;
+  }
+
+  cont.innerHTML = `<p class="detalle">${hallazgos.length} posible(s) inconsistencia(s):</p>` + hallazgos.map(h => `
+    <div class="aviso" style="background:${h.tipo === 'unidad' ? '#3A2A22' : '#2A2238'}; color:${h.tipo === 'unidad' ? '#E8C9B8' : '#D9C9F0'}; margin-top:8px;">
+      <b>${h.fuente}</b> — ${h.nombre}<br>${h.detalle}
+    </div>
+  `).join('');
+}
+
 // ---------- Historial: ver/editar días anteriores, agregar algo olvidado ----------
 let fechaActivaRegistro = null; // cuando está seteada, agregarAlRegistroHoy escribe ahí en vez de hoy
 let fechaHistorialActual = null;
@@ -3305,7 +3357,9 @@ function renderizarHistorial(){
       <label>Espacio usado</label>
       <p class="detalle">nutricion_registro_diario: ${tamKB} KB (${fechas.length} días)</p>
       <button class="btn btn-secundario" onclick="podarDetalleNutrientesViejos()" style="margin-top:6px;">Archivar detalle de nutrientes de días viejos</button>
+      <button class="btn btn-secundario" onclick="buscarErroresDeCarga()" style="margin-top:6px;">🔍 Buscar posibles errores de carga</button>
     </div>
+    <div id="contenidoErroresCarga"></div>
     ${listaHtml}
   `;
 }
