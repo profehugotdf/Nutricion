@@ -676,8 +676,12 @@
     <div class="campo" style="border-top:1px solid var(--borde); padding-top:12px;">
       <label>Multiplicar todo por (para corregir cantidad de porciones sin perder la hora)</label>
       <input type="number" id="editarMultiplicador" step="0.5" value="1" placeholder="Ej: 2 para el doble">
+      <p class="detalle">Si tocás "Nutrientes" abajo, dejá esto en 1 — usá uno u otro, no los dos juntos.</p>
     </div>
-    <button class="btn btn-primario" onclick="guardarEdicionRegistro()">Guardar cambios</button>
+    <h3 style="font-size:.95rem; margin-top:16px;">Nutrientes</h3>
+    <div id="listaNutrientesEditarRegistro"></div>
+    <button class="btn btn-secundario" onclick="agregarFilaNutrienteEditarRegistro()">+ Agregar nutriente</button>
+    <button class="btn btn-primario" onclick="guardarEdicionRegistro()" style="margin-top:12px;">Guardar cambios</button>
     <button class="btn btn-secundario" onclick="borrarRegistro()" style="color:var(--tomate); border-color:var(--tomate);">Eliminar registro</button>
   </div>
 </div>
@@ -3574,25 +3578,45 @@ function abrirEdicionRegistro(idx, fecha){
   const horaDate = new Date(item.hora);
   document.getElementById('editarHora').value = `${String(horaDate.getHours()).padStart(2,'0')}:${String(horaDate.getMinutes()).padStart(2,'0')}`;
 
-  const panelDiv = document.getElementById('panelNutrientesRegistro');
-  if(item.nutrientes && item.nutrientes.length > 0){
-    const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
-    item.nutrientes.forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
-    const renderGrupo = (titulo, items2) => items2.length === 0 ? '' : `
-      <div class="campo">
-        <label>${titulo}</label>
-        ${items2.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
-      </div>
-    `;
-    panelDiv.innerHTML = renderGrupo('Macronutrientes', grupos.macros)
-      + renderGrupo('Vitaminas', grupos.vitaminas)
-      + renderGrupo('Minerales', grupos.minerales)
-      + renderGrupo('Otros', grupos.otros);
-  }else{
-    panelDiv.innerHTML = '';
-  }
+  nutrientesEditandoRegistro = (item.nutrientes || []).map(n => ({ nombreEs:n.nombre, valor:n.valor, unidad:n.unidad }));
+  renderizarFilasNutrientesEditarRegistro();
+  document.getElementById('panelNutrientesRegistro').innerHTML = '';
 
   abrirModal('modalEditarRegistro');
+}
+
+// ---------- Filas dinámicas de nutrientes al editar un registro del día ----------
+let nutrientesEditandoRegistro = [];
+
+function renderizarFilasNutrientesEditarRegistro(){
+  const cont = document.getElementById('listaNutrientesEditarRegistro');
+  cont.innerHTML = nutrientesEditandoRegistro.map((n, idx) => `
+    <div class="fila" style="gap:6px; margin-bottom:6px;">
+      <input type="text" value="${n.nombreEs}" oninput="actualizarFilaNutrienteEditarRegistro(${idx}, 'nombreEs', this.value)" placeholder="Ej: Vitamina B12" style="flex:2; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <input type="number" value="${n.valor}" oninput="actualizarFilaNutrienteEditarRegistro(${idx}, 'valor', this.value)" placeholder="Valor" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <select onchange="actualizarFilaNutrienteEditarRegistro(${idx}, 'unidad', this.value)" style="flex:1; padding:6px 4px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+        <option value="mg" ${n.unidad==='mg'?'selected':''}>mg</option>
+        <option value="g" ${n.unidad==='g'?'selected':''}>g</option>
+        <option value="µg" ${n.unidad==='µg'?'selected':''}>µg</option>
+        <option value="IU" ${n.unidad==='IU'?'selected':''}>UI</option>
+      </select>
+      <button onclick="quitarFilaNutrienteEditarRegistro(${idx})" style="background:none; border:none; color:var(--tomate); font-size:1.1rem;">✕</button>
+    </div>
+  `).join('');
+}
+
+function agregarFilaNutrienteEditarRegistro(){
+  nutrientesEditandoRegistro.push({ nombreEs:'', valor:'', unidad:'mg' });
+  renderizarFilasNutrientesEditarRegistro();
+}
+
+function quitarFilaNutrienteEditarRegistro(idx){
+  nutrientesEditandoRegistro.splice(idx, 1);
+  renderizarFilasNutrientesEditarRegistro();
+}
+
+function actualizarFilaNutrienteEditarRegistro(idx, campo, valor){
+  nutrientesEditandoRegistro[idx][campo] = valor;
 }
 
 function volverTrasEdicion(){
@@ -3624,6 +3648,10 @@ function guardarEdicionRegistro(){
       if(item.nutrientes){
         item.nutrientes = item.nutrientes.map(n => ({ ...n, valor: Math.round(n.valor * multiplicador * 100) / 100 }));
       }
+    }else{
+      item.nutrientes = nutrientesEditandoRegistro
+        .filter(n => n.nombreEs.trim() && n.valor !== '' && !isNaN(parseFloat(n.valor)))
+        .map(n => ({ nombre: traducirNutrienteManual(n.nombreEs), valor: parseFloat(n.valor), unidad: n.unidad }));
     }
 
     item.nombre = nombre;
