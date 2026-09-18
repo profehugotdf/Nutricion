@@ -424,6 +424,28 @@
     <div id="contenidoEvolucionPantorrilla"></div>
     <p class="aviso">Screening de baja masa muscular (SARC-CalF) — umbral de referencia &lt;31cm. Es solo un primer filtro; el criterio clínico real de sarcopenia parte de la fuerza de prensión (dinamómetro de mano), no de un perímetro. Un valor bajo acá es motivo para consultarlo, no un diagnóstico.</p>
 
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de brazo relajado — MUAC (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — punto medio entre acromion (hombro) y olécranon (codo), brazo relajado colgando</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputBrazoRelajadoHoy" step="0.5" placeholder="Ej: 30" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarBrazoRelajadoHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionBrazoRelajado"></div>
+    <p class="aviso">Segundo screening de baja masa muscular (MUAC), validado con correlación similar a la pantorrilla en varios estudios — mismo criterio: primer filtro, no diagnóstico.</p>
+
+    <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de brazo flexionado (cm)</h3>
+    <div class="campo">
+      <label>Registrar de hoy — mismo punto medio, bíceps contraído al máximo</label>
+      <div class="fila" style="gap:8px;">
+        <input type="number" id="inputBrazoFlexionadoHoy" step="0.5" placeholder="Ej: 33" style="flex:1;">
+        <button class="btn btn-primario" onclick="guardarBrazoFlexionadoHoy()" style="width:auto; padding:10px 16px;">Guardar</button>
+      </div>
+    </div>
+    <div id="contenidoEvolucionBrazoFlexionado"></div>
+    <p class="aviso">Sin umbral clínico validado — no encontré ningún estudio de sarcopenia que use la versión flexionada. Solo sirve para ver tu propia tendencia, sin alerta.</p>
+
     <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">Perímetro de muslo superior/máximo (cm)</h3>
     <div class="campo">
       <label>Registrar de hoy — 1cm por debajo del pliegue glúteo, cinta horizontal</label>
@@ -952,6 +974,47 @@ function renderizarEvolucionCintura(){
       `;
     }
   }
+}
+
+// ---------- Perímetro de brazo relajado — MUAC (screening de baja masa muscular) ----------
+const CLAVE_HISTORIAL_BRAZO_RELAJADO_LOCAL = 'nutricion_historial_brazo_relajado';
+
+function guardarBrazoRelajadoHoy(){
+  const valor = parseFloat(document.getElementById('inputBrazoRelajadoHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 60){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_BRAZO_RELAJADO_LOCAL, 'brazoCm', 'inputBrazoRelajadoHoy', valor, renderizarEvolucionBrazoRelajado);
+}
+
+function renderizarEvolucionBrazoRelajado(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_BRAZO_RELAJADO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'brazoCm', 'contenidoEvolucionBrazoRelajado', '#5B6E4F', 'cm');
+
+  if(puntos.length > 0){
+    const ultimo = puntos[puntos.length - 1].brazoCm;
+    const sexo = obtenerPerfilEfectivo().sexo;
+    const umbral = sexo === 'F' ? 27.5 : 28.6;
+    if(ultimo <= umbral){
+      document.getElementById('contenidoEvolucionBrazoRelajado').innerHTML += `
+        <div class="aviso" style="background:#3A2A22; color:#E8C9B8; margin-top:8px;">
+          ⚠ Tu último registro (${ultimo}cm) está en o por debajo del umbral de screening (${umbral}cm) — vale la pena comentarlo en una consulta, igual que con la pantorrilla.
+        </div>
+      `;
+    }
+  }
+}
+
+// ---------- Perímetro de brazo flexionado (sin umbral validado, solo tendencia) ----------
+const CLAVE_HISTORIAL_BRAZO_FLEXIONADO_LOCAL = 'nutricion_historial_brazo_flexionado';
+
+function guardarBrazoFlexionadoHoy(){
+  const valor = parseFloat(document.getElementById('inputBrazoFlexionadoHoy').value);
+  if(isNaN(valor) || valor <= 0 || valor > 70){ alert('Ingresá un valor válido en cm.'); return; }
+  guardarMedicionHoy(CLAVE_HISTORIAL_BRAZO_FLEXIONADO_LOCAL, 'brazoFlexCm', 'inputBrazoFlexionadoHoy', valor, renderizarEvolucionBrazoFlexionado);
+}
+
+function renderizarEvolucionBrazoFlexionado(){
+  const puntos = leerJSON(CLAVE_HISTORIAL_BRAZO_FLEXIONADO_LOCAL, []).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  dibujarGraficoEvolucion(puntos, 'brazoFlexCm', 'contenidoEvolucionBrazoFlexionado', '#C98A1E', 'cm');
 }
 
 // ---------- Perímetro de pantorrilla (screening de baja masa muscular, SARC-CalF) ----------
@@ -3703,6 +3766,8 @@ function abrirModal(id){
     renderizarEvolucionCintura();
     renderizarEvolucionMusloSuperior();
     renderizarEvolucionPantorrilla();
+    renderizarEvolucionBrazoRelajado();
+    renderizarEvolucionBrazoFlexionado();
     renderizarEvolucionCadera();
     renderizarICC();
   }
