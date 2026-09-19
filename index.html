@@ -655,11 +655,12 @@
   <div class="modal">
     <button class="btn-cerrar" onclick="cerrarModal('modalRecientes')">✕</button>
     <h3>Recientes / frecuentes</h3>
-    <p class="aviso">Tocá cualquiera para registrarlo de nuevo hoy, con la categoría seleccionada arriba.</p>
+    <p class="aviso">Tocá cualquiera para registrarlo de nuevo hoy, con la categoría seleccionada arriba. Marcá varios con el check para registrarlos todos juntos, tal cual (sin ajustar cantidad).</p>
     <div class="campo">
       <label>Filtrar (busca en todo tu historial, no solo en la lista de abajo)</label>
       <input type="text" id="inputFiltroRecientes" placeholder="Escribí para filtrar…" oninput="filtrarRecientesYFrecuentes()">
     </div>
+    <button class="btn btn-primario" id="btnRegistrarSeleccionados" onclick="registrarSeleccionados()" style="display:none;">Registrar seleccionados (0)</button>
     <h3 style="font-size:.95rem; margin-top:16px;">Frecuentes</h3>
     <div class="lista-comidas" id="listaFrecuentes"></div>
     <h3 style="font-size:.95rem; margin-top:16px;">Recientes</h3>
@@ -3265,6 +3266,57 @@ function calcularFrecuentes(todos, limite = 8){
     .map(c => c.item);
 }
 
+window._seleccionMultiple = new Map();
+window._itemsPorClave = new Map();
+
+function renderListaConCheckbox(lista, elId, vacioTxt, prefijo){
+  const el = document.getElementById(elId);
+  if(lista.length === 0){
+    el.innerHTML = `<div class="vacio">${vacioTxt}</div>`;
+    return;
+  }
+  el.innerHTML = lista.map((i, idx) => {
+    const clave = `${prefijo}-${idx}`;
+    window._itemsPorClave.set(clave, i);
+    const marcado = window._seleccionMultiple.has(clave);
+    return `
+      <div class="comida-item" onclick='reregistrarItem(${JSON.stringify(i)})'>
+        <input type="checkbox" onclick="event.stopPropagation(); toggleSeleccionMultiple('${clave}')" ${marcado ? 'checked' : ''} style="margin-right:10px; width:20px; height:20px;">
+        <div style="flex:1;">
+          <div class="nombre">${i.nombre}</div>
+          <div class="detalle">${i.origen || ''}</div>
+        </div>
+        <div class="kcal">${i.kcal} kcal</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleSeleccionMultiple(clave){
+  if(window._seleccionMultiple.has(clave)) window._seleccionMultiple.delete(clave);
+  else window._seleccionMultiple.set(clave, window._itemsPorClave.get(clave));
+  actualizarBotonSeleccionados();
+}
+
+function actualizarBotonSeleccionados(){
+  const n = window._seleccionMultiple.size;
+  const btn = document.getElementById('btnRegistrarSeleccionados');
+  btn.style.display = n > 0 ? 'block' : 'none';
+  btn.textContent = `Registrar seleccionados (${n})`;
+}
+
+function registrarSeleccionados(){
+  window._seleccionMultiple.forEach(item => {
+    agregarAlRegistroHoy({
+      nombre: item.nombre, kcal: item.kcal,
+      origen: item.origen, nutrientes: item.nutrientes || []
+    });
+  });
+  window._seleccionMultiple.clear();
+  actualizarBotonSeleccionados();
+  cerrarModal('modalRecientes');
+}
+
 function renderizarRecientesYFrecuentes(){
   const todos = obtenerTodosLosItems();
   const recientes = calcularRecientes(todos, 50);
@@ -3273,53 +3325,21 @@ function renderizarRecientesYFrecuentes(){
   window._recientesCache = recientes;
   window._frecuentesCache = frecuentes;
   window._todosCache = todos;
+  window._seleccionMultiple.clear();
   document.getElementById('inputFiltroRecientes').value = '';
 
-  const renderLista = (lista, elId, vacioTxt) => {
-    const el = document.getElementById(elId);
-    if(lista.length === 0){
-      el.innerHTML = `<div class="vacio">${vacioTxt}</div>`;
-      return;
-    }
-    el.innerHTML = lista.map(i => `
-      <div class="comida-item" onclick='reregistrarItem(${JSON.stringify(i)})'>
-        <div>
-          <div class="nombre">${i.nombre}</div>
-          <div class="detalle">${i.origen || ''}</div>
-        </div>
-        <div class="kcal">${i.kcal} kcal</div>
-      </div>
-    `).join('');
-  };
-
-  renderLista(frecuentes, 'listaFrecuentes', 'Todavía no hay comidas repetidas.');
-  renderLista(recientes, 'listaRecientes', 'Todavía no registraste nada.');
+  renderListaConCheckbox(frecuentes, 'listaFrecuentes', 'Todavía no hay comidas repetidas.', 'frec');
+  renderListaConCheckbox(recientes, 'listaRecientes', 'Todavía no registraste nada.', 'rec');
+  actualizarBotonSeleccionados();
 }
 
 function filtrarRecientesYFrecuentes(){
   const q = normalizarTexto(document.getElementById('inputFiltroRecientes').value.trim());
 
-  const renderLista = (lista, elId, vacioTxt) => {
-    const el = document.getElementById(elId);
-    if(lista.length === 0){
-      el.innerHTML = `<div class="vacio">${vacioTxt}</div>`;
-      return;
-    }
-    el.innerHTML = lista.map(i => `
-      <div class="comida-item" onclick='reregistrarItem(${JSON.stringify(i)})'>
-        <div>
-          <div class="nombre">${i.nombre}</div>
-          <div class="detalle">${i.origen || ''}</div>
-        </div>
-        <div class="kcal">${i.kcal} kcal</div>
-      </div>
-    `).join('');
-  };
-
   if(!q){
     // Sin texto: volver a la vista normal (top 50 recientes/frecuentes)
-    renderLista(window._frecuentesCache || [], 'listaFrecuentes', 'Todavía no hay comidas repetidas.');
-    renderLista(window._recientesCache || [], 'listaRecientes', 'Todavía no registraste nada.');
+    renderListaConCheckbox(window._frecuentesCache || [], 'listaFrecuentes', 'Todavía no hay comidas repetidas.', 'frec');
+    renderListaConCheckbox(window._recientesCache || [], 'listaRecientes', 'Todavía no registraste nada.', 'rec');
     return;
   }
 
@@ -3328,8 +3348,8 @@ function filtrarRecientesYFrecuentes(){
   const recientesFiltrados = calcularRecientes(todos, 1000).filter(i => normalizarTexto(i.nombre).includes(q)).slice(0, 30);
   const frecuentesFiltrados = calcularFrecuentes(todos, 1000).filter(i => normalizarTexto(i.nombre).includes(q)).slice(0, 30);
 
-  renderLista(frecuentesFiltrados, 'listaFrecuentes', 'Sin resultados en frecuentes.');
-  renderLista(recientesFiltrados, 'listaRecientes', 'Sin resultados en todo el historial.');
+  renderListaConCheckbox(frecuentesFiltrados, 'listaFrecuentes', 'Sin resultados en frecuentes.', 'frec');
+  renderListaConCheckbox(recientesFiltrados, 'listaRecientes', 'Sin resultados en todo el historial.', 'rec');
 }
 
 let _contextoReregistro = null;
