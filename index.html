@@ -131,7 +131,7 @@
 <header>
   <h1>Nutrición</h1>
   <p id="fechaHoy"></p>
-  <button class="btn btn-secundario" onclick="abrirModal('modalConfig')" style="margin-top:10px; width:auto; padding:8px 14px; font-size:.8rem;">⚙️ API keys</button>
+  <button class="btn btn-secundario" onclick="abrirModal('modalConfig')" style="margin-top:10px; width:auto; padding:8px 14px; font-size:.8rem;">⚙️ API keys y datos personales</button>
 </header>
 
 <section class="resumen">
@@ -373,7 +373,7 @@
       </div>
     </div>
     <div id="contenidoEvolucionGrasa"></div>
-    <p class="aviso">Cada vez que cargues una medición nueva, se actualiza sola en "⚙️ API keys" para que el gasto basal (Katch-McArdle) use siempre el dato más reciente.</p>
+    <p class="aviso">Cada vez que cargues una medición nueva, se actualiza sola en "⚙️ API keys y datos personales" para que el gasto basal (Katch-McArdle) use siempre el dato más reciente.</p>
 
     <h3 style="font-size:1rem; margin-top:20px; border-top:1px solid var(--borde); padding-top:16px;">% de masa muscular</h3>
     <div class="campo">
@@ -629,7 +629,7 @@
 <div class="modal-fondo" id="fondoConfig">
   <div class="modal">
     <button class="btn-cerrar" onclick="cerrarModal('modalConfig')">✕</button>
-    <h3>API keys</h3>
+    <h3>API keys y datos personales</h3>
     <p class="aviso">Guardadas en este dispositivo/navegador únicamente — si abrís la app desde otra URL (ej: local vs GitHub Pages) o desde otro navegador, las va a volver a pedir.</p>
     <div class="campo">
       <label>API key de Anthropic (foto)</label>
@@ -1343,7 +1343,7 @@ function renderizarObjetivoPeso(){
 
   const plan = calcularDeficitDiarioObjetivo();
   if(!plan){
-    resumenDiv.innerHTML = '<p class="aviso">Falta cargar el peso actual — en Plan de Ciclos, o en "⚙️ API keys → Datos personales" si usás esta app sola.</p>';
+    resumenDiv.innerHTML = '<p class="aviso">Falta cargar el peso actual — en Plan de Ciclos, o en "⚙️ API keys y datos personales → Datos personales" si usás esta app sola.</p>';
     return;
   }
   if(plan.completado){
@@ -1500,6 +1500,17 @@ function calcularKcalPorPasos(pasosTotales){
 }
 
 // ---------- Gasto basal (TMB) — Mifflin-St Jeor ----------
+function camposFaltantesParaTMB(){
+  const perfil = obtenerPerfilEfectivo();
+  const altura = parseFloat(localStorage.getItem('nutricion_altura_cm'));
+  const faltantes = [];
+  if(!perfil.pesoKg) faltantes.push('peso');
+  if(!perfil.edad) faltantes.push('fecha de nacimiento');
+  if(!perfil.sexo) faltantes.push('sexo');
+  if(!altura) faltantes.push('altura');
+  return faltantes;
+}
+
 function calcularTMB(){
   const perfil = obtenerPerfilEfectivo();
   const peso = perfil.pesoKg;
@@ -1632,9 +1643,12 @@ function renderizarTodo(){
 
   document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
   const usandoKatchMcArdle = !isNaN(parseFloat(localStorage.getItem('nutricion_grasa_corporal_pct')));
-  document.getElementById('totalTMB').textContent = tmb !== null
-    ? `${tmb} kcal${usandoKatchMcArdle ? ' (Katch-McArdle)' : ''}`
-    : 'Cargá altura en ⚙️';
+  if(tmb !== null){
+    document.getElementById('totalTMB').textContent = `${tmb} kcal${usandoKatchMcArdle ? ' (Katch-McArdle)' : ''}`;
+  }else{
+    const faltan = camposFaltantesParaTMB();
+    document.getElementById('totalTMB').textContent = `Falta: ${faltan.join(', ')} (en ⚙️)`;
+  }
   document.getElementById('totalGasto').textContent = `${gastoEntrenamiento} kcal`;
   const porDeporte = calcularGastoHoyPorDeporte();
   const ICONOS_DEPORTE = { correr:'🏃', bici:'🚴', kayak:'🚣', fuerza:'🏋️' };
