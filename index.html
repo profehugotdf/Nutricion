@@ -197,6 +197,10 @@
       <span class="icono">🇦🇷</span>
       <span class="txt">Alimentos Argentina (SARA2)</span>
     </div>
+    <div class="accion" onclick="abrirModal('modalMexico')">
+      <span class="icono">🇲🇽</span>
+      <span class="txt">Alimentos México (BAM)</span>
+    </div>
     <div class="accion" onclick="abrirModal('modalRecientes')">
       <span class="icono">🕐</span>
       <span class="txt">Recientes / frecuentes</span>
@@ -515,6 +519,22 @@
   </div>
 </div>
 
+<!-- Modal: alimentos México (BAM) -->
+<div class="modal-fondo" id="fondoMexico">
+  <div class="modal">
+    <button class="btn-cerrar" onclick="cerrarModal('modalMexico')">✕</button>
+    <h3>Alimentos México (BAM)</h3>
+    <div class="campo">
+      <label>Buscar en español (tortilla, mole, nopal…)</label>
+      <input type="text" id="inputBusquedaMexico" placeholder="tortilla de maíz">
+    </div>
+    <button class="btn btn-primario" onclick="buscarMexico()">Buscar</button>
+    <div id="resultadosMexico"></div>
+    <div id="seleccionMexico"></div>
+    <p class="aviso">Base de Alimentos de México (BAM v18.1.1), INSP/INCMNSZ — 2037 alimentos. No incluye sodio, potasio, magnesio, fósforo, cobre ni manganeso (no están en la fuente original) — solo macros + calcio, hierro, zinc y vitaminas principales.</p>
+  </div>
+</div>
+
 <!-- Modal: alimento genérico USDA -->
 <div class="modal-fondo" id="fondoAlimentoUSDA">
   <div class="modal">
@@ -562,6 +582,14 @@
     <button class="btn btn-secundario" onclick="buscarArgentinaPlato()">Buscar en SARA2</button>
     <div id="resultadosArgentinaPlato"></div>
     <div id="seleccionArgentinaPlato"></div>
+
+    <div class="campo" style="margin-top:14px; border-top:1px solid var(--borde); padding-top:14px;">
+      <label>Buscar en Alimentos México — BAM (español)</label>
+      <input type="text" id="inputBusquedaPlatoMexico" placeholder="tortilla, nopal, mole…">
+    </div>
+    <button class="btn btn-secundario" onclick="buscarMexicoPlato()">Buscar en BAM</button>
+    <div id="resultadosMexicoPlato"></div>
+    <div id="seleccionMexicoPlato"></div>
 
     <div class="campo" style="margin-top:14px; border-top:1px solid var(--borde); padding-top:14px;">
       <label>Buscar ingrediente en USDA (español para lo común, o inglés)</label>
@@ -3079,6 +3107,160 @@ function agregarIngredienteArgentinaAlPlato(nombreOriginal){
   document.getElementById('inputBusquedaPlatoArgentina').value = '';
   document.getElementById('resultadosArgentinaPlato').innerHTML = '';
   document.getElementById('seleccionArgentinaPlato').innerHTML = '';
+  renderizarIngredientesPlato();
+}
+
+// ---------- Alimentos México (BAM, archivo estático) ----------
+let _alimentosMexicoCache = null;
+
+async function cargarAlimentosMexico(){
+  if(_alimentosMexicoCache) return _alimentosMexicoCache;
+  const resp = await fetch('alimentos-mexico.json');
+  _alimentosMexicoCache = await resp.json();
+  return _alimentosMexicoCache;
+}
+
+async function buscarMexico(){
+  const query = document.getElementById('inputBusquedaMexico').value.trim();
+  const resultadosDiv = document.getElementById('resultadosMexico');
+  document.getElementById('seleccionMexico').innerHTML = '';
+  if(!query){ alert('Escribí qué alimento buscás.'); return; }
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const datos = await cargarAlimentosMexico();
+    const q = normalizarTexto(query);
+    const resultados = datos.filter(a => normalizarTexto(a.nombre).includes(q)).slice(0, 15);
+    if(resultados.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados en BAM. Probá con USDA o cargalo a mano.</p>';
+      return;
+    }
+    resultadosDiv.innerHTML = resultados.map(a => `
+      <div class="comida-item" onclick='seleccionarMexico(${JSON.stringify(a.nombre)})'>
+        <div>
+          <div class="nombre">${a.nombre}</div>
+          <div class="detalle">${a.kcal_100g !== null ? Math.round(a.kcal_100g*10)/10 + ' kcal/100g' : 'sin dato de energía'}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">No se pudo cargar el archivo de alimentos de México. ¿Está subido junto al index.html?</p>';
+    console.error(e);
+  }
+}
+
+function seleccionarMexico(nombre){
+  const alimento = _alimentosMexicoCache.find(a => a.nombre === nombre);
+  if(!alimento) return;
+  const seleccionDiv = document.getElementById('seleccionMexico');
+
+  const grupos = { macros:[], vitaminas:[], minerales:[], otros:[] };
+  alimento.nutrientes_100g.forEach(n => grupos[categorizarNutriente(n.nombre)].push(n));
+  const renderGrupo = (titulo, items) => items.length === 0 ? '' : `
+    <div class="campo">
+      <label>${titulo}</label>
+      ${items.map(n => `<p class="detalle">${n.nombre}: ${n.valor}${n.unidad}</p>`).join('')}
+    </div>
+  `;
+
+  seleccionDiv.innerHTML = `
+    <div class="campo">
+      <label>Nombre (editable)</label>
+      <input type="text" id="mexicoNombreEditable" value="${alimento.nombre}">
+    </div>
+    <p class="detalle" style="font-weight:700;">${alimento.kcal_100g !== null ? Math.round(alimento.kcal_100g*10)/10 + ' kcal / 100g' : 'Sin dato de energía'}</p>
+    ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
+    ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
+    ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
+    <div class="campo">
+      <label>Gramos consumidos</label>
+      <input type="number" id="mexicoGramos" placeholder="Ej: 100">
+    </div>
+    <button class="btn btn-primario" onclick='registrarMexico(${JSON.stringify(nombre)})'>Registrar</button>
+  `;
+}
+
+function registrarMexico(nombreOriginal){
+  const alimento = _alimentosMexicoCache.find(a => a.nombre === nombreOriginal);
+  const nombre = document.getElementById('mexicoNombreEditable').value.trim();
+  const gramos = parseFloat(document.getElementById('mexicoGramos').value);
+  if(!nombre || isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+
+  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  })));
+
+  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'BAM', nutrientes });
+  document.getElementById('inputBusquedaMexico').value = '';
+  document.getElementById('resultadosMexico').innerHTML = '';
+  document.getElementById('seleccionMexico').innerHTML = '';
+  cerrarModal('modalMexico');
+}
+
+// ---------- BAM (México) dentro de Armar plato ----------
+async function buscarMexicoPlato(){
+  const query = document.getElementById('inputBusquedaPlatoMexico').value.trim();
+  const resultadosDiv = document.getElementById('resultadosMexicoPlato');
+  document.getElementById('seleccionMexicoPlato').innerHTML = '';
+  if(!query){ alert('Escribí qué ingrediente buscás.'); return; }
+
+  resultadosDiv.innerHTML = '<p class="aviso">Buscando…</p>';
+  try{
+    const datos = await cargarAlimentosMexico();
+    const q = normalizarTexto(query);
+    const resultados = datos.filter(a => normalizarTexto(a.nombre).includes(q)).slice(0, 10);
+    if(resultados.length === 0){
+      resultadosDiv.innerHTML = '<p class="aviso">Sin resultados en BAM. Probá en USDA abajo.</p>';
+      return;
+    }
+    resultadosDiv.innerHTML = resultados.map(a => `
+      <div class="comida-item" onclick='seleccionarMexicoPlato(${JSON.stringify(a.nombre)})'>
+        <div>
+          <div class="nombre">${a.nombre}</div>
+          <div class="detalle">${a.kcal_100g !== null ? Math.round(a.kcal_100g*10)/10 + ' kcal/100g' : 'sin dato de energía'}</div>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){
+    resultadosDiv.innerHTML = '<p class="aviso">No se pudo cargar el archivo de alimentos de México.</p>';
+    console.error(e);
+  }
+}
+
+function seleccionarMexicoPlato(nombre){
+  const alimento = _alimentosMexicoCache.find(a => a.nombre === nombre);
+  if(!alimento) return;
+  const seleccionDiv = document.getElementById('seleccionMexicoPlato');
+  seleccionDiv.innerHTML = `
+    <div class="campo">
+      <label>${alimento.nombre}</label>
+      <p class="detalle">${alimento.kcal_100g !== null ? Math.round(alimento.kcal_100g*10)/10 + ' kcal / 100g' : '⚠ Sin dato de energía'}</p>
+    </div>
+    <div class="campo">
+      <label>Cantidad (gramos)</label>
+      <input type="number" id="platoGramosMexico" placeholder="Ej: 100">
+    </div>
+    <button class="btn btn-primario" onclick='agregarIngredienteMexicoAlPlato(${JSON.stringify(nombre)})'>Agregar al plato</button>
+  `;
+}
+
+function agregarIngredienteMexicoAlPlato(nombreOriginal){
+  const alimento = _alimentosMexicoCache.find(a => a.nombre === nombreOriginal);
+  const gramos = parseFloat(document.getElementById('platoGramosMexico').value);
+  if(isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
+  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
+    nombre: n.nombre,
+    valor: Math.round((n.valor * gramos / 100) * 100) / 100,
+    unidad: n.unidad
+  })));
+  platoEnConstruccion.push({ nombre: `${alimento.nombre} (${gramos}g)`, kcal, nutrientes });
+  document.getElementById('inputBusquedaPlatoMexico').value = '';
+  document.getElementById('resultadosMexicoPlato').innerHTML = '';
+  document.getElementById('seleccionMexicoPlato').innerHTML = '';
   renderizarIngredientesPlato();
 }
 
