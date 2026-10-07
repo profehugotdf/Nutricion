@@ -2976,6 +2976,17 @@ function normalizarTexto(s){
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// ---------- Alimentos sin dato de energía (SARA2/BAM): permitir kcal/100g a mano ----------
+function kcalManualHTML(id){
+  return `<div class="campo"><label>⚠ Sin dato de energía: ingresá las kcal por 100 g (a mano)</label><input type="number" id="${id}" placeholder="Ej: 250"></div>`;
+}
+function kcal100Efectiva(alimento, idManual){
+  if(alimento.kcal_100g !== null && alimento.kcal_100g !== undefined) return alimento.kcal_100g;
+  const el = document.getElementById(idManual);
+  const v = el ? parseFloat(el.value) : NaN;
+  return (isNaN(v) || v < 0) ? null : v;
+}
+
 async function cargarAlimentosArgentina(){
   if(_alimentosArgentinaCache) return _alimentosArgentinaCache;
   const resp = await fetch('alimentos-argentina.json');
@@ -3035,6 +3046,7 @@ function seleccionarArgentina(nombre){
     ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
     ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
     ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
+    ${alimento.kcal_100g === null ? kcalManualHTML('argentinaKcalManual') : ''}
     <div class="campo">
       <label>Gramos consumidos</label>
       <input type="number" id="argentinaGramos" placeholder="Ej: 100">
@@ -3047,9 +3059,10 @@ function registrarArgentina(nombreOriginal){
   const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombreOriginal);
   const nombre = document.getElementById('argentinaNombreEditable').value.trim();
   const gramos = parseFloat(document.getElementById('argentinaGramos').value);
-  if(!nombre || isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+  const kcal100 = kcal100Efectiva(alimento, 'argentinaKcalManual');
+  if(!nombre || isNaN(gramos) || kcal100 === null){ alert('Completá nombre, gramos, y calorías por 100 g (a mano si el alimento no las trae).'); return; }
 
-  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const kcal = Math.round((kcal100 * gramos) / 100);
   const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
@@ -3102,6 +3115,7 @@ function seleccionarArgentinaPlato(nombre){
       <label>${alimento.nombre}</label>
       <p class="detalle">${alimento.kcal_100g !== null ? alimento.kcal_100g + ' kcal / 100g' : '⚠ Sin dato de energía'}</p>
     </div>
+    ${alimento.kcal_100g === null ? kcalManualHTML('platoKcalManualArgentina') : ''}
     <div class="campo">
       <label>Cantidad (gramos)</label>
       <input type="number" id="platoGramosArgentina" placeholder="Ej: 100">
@@ -3113,8 +3127,9 @@ function seleccionarArgentinaPlato(nombre){
 function agregarIngredienteArgentinaAlPlato(nombreOriginal){
   const alimento = _alimentosArgentinaCache.find(a => a.nombre === nombreOriginal);
   const gramos = parseFloat(document.getElementById('platoGramosArgentina').value);
-  if(isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
-  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const kcal100 = kcal100Efectiva(alimento, 'platoKcalManualArgentina');
+  if(isNaN(gramos) || kcal100 === null){ alert('Completá los gramos y las calorías por 100 g (a mano si el alimento no las trae).'); return; }
+  const kcal = Math.round((kcal100 * gramos) / 100);
   const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
@@ -3189,6 +3204,7 @@ function seleccionarMexico(nombre){
     ${renderGrupo('Macronutrientes (por 100g)', grupos.macros)}
     ${renderGrupo('Vitaminas (por 100g)', grupos.vitaminas)}
     ${renderGrupo('Minerales (por 100g)', grupos.minerales)}
+    ${alimento.kcal_100g === null ? kcalManualHTML('mexicoKcalManual') : ''}
     <div class="campo">
       <label>Gramos consumidos</label>
       <input type="number" id="mexicoGramos" placeholder="Ej: 100">
@@ -3201,9 +3217,10 @@ function registrarMexico(nombreOriginal){
   const alimento = _alimentosMexicoCache.find(a => a.nombre === nombreOriginal);
   const nombre = document.getElementById('mexicoNombreEditable').value.trim();
   const gramos = parseFloat(document.getElementById('mexicoGramos').value);
-  if(!nombre || isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá nombre, gramos, y verificá que haya dato de calorías.'); return; }
+  const kcal100 = kcal100Efectiva(alimento, 'mexicoKcalManual');
+  if(!nombre || isNaN(gramos) || kcal100 === null){ alert('Completá nombre, gramos, y calorías por 100 g (a mano si el alimento no las trae).'); return; }
 
-  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const kcal = Math.round((kcal100 * gramos) / 100);
   const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
@@ -3256,6 +3273,7 @@ function seleccionarMexicoPlato(nombre){
       <label>${alimento.nombre}</label>
       <p class="detalle">${alimento.kcal_100g !== null ? Math.round(alimento.kcal_100g*10)/10 + ' kcal / 100g' : '⚠ Sin dato de energía'}</p>
     </div>
+    ${alimento.kcal_100g === null ? kcalManualHTML('platoKcalManualMexico') : ''}
     <div class="campo">
       <label>Cantidad (gramos)</label>
       <input type="number" id="platoGramosMexico" placeholder="Ej: 100">
@@ -3267,8 +3285,9 @@ function seleccionarMexicoPlato(nombre){
 function agregarIngredienteMexicoAlPlato(nombreOriginal){
   const alimento = _alimentosMexicoCache.find(a => a.nombre === nombreOriginal);
   const gramos = parseFloat(document.getElementById('platoGramosMexico').value);
-  if(isNaN(gramos) || alimento.kcal_100g === null){ alert('Completá los gramos y verificá que haya dato de calorías.'); return; }
-  const kcal = Math.round((alimento.kcal_100g * gramos) / 100);
+  const kcal100 = kcal100Efectiva(alimento, 'platoKcalManualMexico');
+  if(isNaN(gramos) || kcal100 === null){ alert('Completá los gramos y las calorías por 100 g (a mano si el alimento no las trae).'); return; }
+  const kcal = Math.round((kcal100 * gramos) / 100);
   const nutrientes = filtrarNutrientesUtiles(alimento.nutrientes_100g.map(n => ({
     nombre: n.nombre,
     valor: Math.round((n.valor * gramos / 100) * 100) / 100,
