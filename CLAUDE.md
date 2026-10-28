@@ -1,0 +1,64 @@
+# Nutrición (repo Nutricion)
+
+> Archivo de instrucciones para Claude (y para cualquiera que trabaje en este repo). Se lee solo al arrancar una conversación con este repo. Si algo de acá deja de ser cierto, actualizalo en el mismo cambio.
+
+
+Registro de comidas, calorías y calidad nutricional, conectado con el gasto de las apps de deportes. Fuentes: tablas de Argentina (SARA2) y México, USDA, Open Food Facts, y estimación con Claude por foto o por descripción del plato (la API key de Anthropic la pone cada persona en Configuración; viaja desde el teléfono, no hay servidor).
+
+## Lo propio de este repo
+
+- Claves con prefijo `nutricion_` (registro diario, comidas guardadas, perfil corporal, historial de medidas, API keys). Lee `entrenamiento_perfil`, `entrenamiento_forma_registro`, `entrenamiento_proximo_evento` y las `*_sesiones` de las otras apps.
+- Cada ítem del registro guarda `nutrientes: [{nombre, valor, unidad}]` con los **nombres de USDA** (en inglés). Los totales del día y el % de valores diarios salen de `TABLA_VALORES_DIARIOS` por coincidencia de nombre (`matchValorDiario`): lo que se agregue tiene que usar esos nombres.
+- Estimación con IA (foto y descripción): `promptNutrientesIA`, `normalizarIA`, `htmlNutrientesIA`, `nutrientesDesdeIA`; la lista de nutrientes pedidos está en `NUTRI_IA` (clave, nombre USDA, unidad, etiqueta). Se guardan como "<nombre USDA> (estimado por foto|descripción)".
+- Funciona sin conexión con `sw.js` (primero lo guardado, después actualiza en segundo plano: una versión nueva se ve al abrir la app por segunda vez). Subir `CACHE_NAME` si cambia la lista de archivos.
+- No tiene número de versión visible todavía. Si se agrega, mismo formato que Kayak/Correr.
+
+## Quién y cómo trabajamos
+
+- Usuario: Hugo (profe de educación física y entrenador de triatlón en Ushuaia). Escribe en castellano rioplatense; la app, los textos y los comentarios del código también van en rioplatense.
+- Prueba todo en el teléfono: Brave para Android (Samsung S26 Ultra). Manda capturas o videos de pantalla. En Android no hay herramientas de desarrollador: cualquier diagnóstico tiene que estar **adentro de la app** (una tarjeta o un botón de "copiar").
+- Si Hugo pega código o un prompt que viene de otra conversación, **primero mirá cómo está el repo ahora** y después actuá. No lo apliques a ciegas.
+- **GitHub es la única fuente de verdad.** Arrancá siempre desde lo que está en `main`, nunca desde una copia vieja de otra conversación. Ya pasó: dos versiones de Mi plan se separaron y hubo que unirlas a mano.
+
+## Filosofía de las apps (todas iguales)
+
+- **Un solo `index.html`** con el CSS y el JS adentro. Sin dependencias externas ni build. Funciona sin conexión.
+- Hosting: GitHub Pages en `profehugotdf.github.io/<repo>/`. Lo que se sube a `main` se publica solo, en un minuto.
+- Pensada para el celular: botones grandes, tolerante a pantallas apagadas y a cortes de señal.
+- **No perder datos nunca.** Si guardar falla, que se vea en pantalla, y la sesión no se descarta. Nada de `catch(e){}` mudos en lo que guarda.
+- Cambios aditivos: no tocar lo que ya anda (poses, fórmulas calibradas, claves de almacenamiento) salvo que el pedido sea justo eso.
+
+## Cómo entregar un cambio
+
+1. Leer el código que se va a tocar (y lo que lo usa) antes de editar.
+2. Si es un bug, primero reproducirlo con una prueba (Node con el pedazo de JS, o Playwright con la página). Después arreglarlo y ver que la prueba pase.
+3. Chequear la sintaxis de cada `<script>` (por ejemplo con `node -e "new Function(código)"` o `node --check` sobre el JS extraído).
+4. Si la app muestra un número de versión, subirlo y anotar en el comentario de historial **qué se cambió y por qué** (incluido lo que dijo o mostró Hugo).
+5. Commit en castellano, directo a `main`, y avisarle a Hugo en pocas líneas qué cambió y cómo probarlo en el teléfono.
+
+## Lo usan otras personas
+
+Además de Hugo, usan las apps su primo, su hermano y compañeros, cada uno en su teléfono y con sus datos (que quedan solo en ese teléfono).
+
+- **Nada personal en el código.** Nada de valores por defecto pensados para Hugo: peso, edad, umbrales, calibraciones de sus equipos, su ciudad, su nombre en los ejemplos. Lo personal se pregunta o se toma del perfil compartido (`entrenamiento_perfil`, `entrenamiento_umbrales`), y si no hay nada, se usa un valor neutro.
+- **Los cambios en cómo se guardan los datos tienen que leer lo viejo** (migrar), nunca empezar de cero ni borrar. Una actualización les llega a todos al instante.
+- Lo que depende de un equipo (rodillo, sensor, ergómetro) tiene que decir qué hace falta y cómo calibrarlo, para quien no lo tiene configurado.
+
+## Ecosistema compartido (mismo origen profehugotdf.github.io)
+
+Todas las apps comparten `localStorage` (unos 5 MB en total para todas) y pueden leer las claves de las otras.
+
+- `entrenamiento_forma_registro`: `[{fecha:'AAAA-MM-DD', deporte, tss, id, calorias?}]`. Es la Forma combinada (CTL/ATL/TSB con EWMA). Cada app hace upsert **por id** y **nunca** pisa las entradas de otra. La fecha es **local**: no usar `toISOString().slice(0,10)`, porque corre el día (bug que ya pasó).
+- `entrenamiento_umbrales`: `{ritmoUmbralCarreraSegKm, pulsoUmbralCarrera, ftpBici, pulsoUmbralBici, pulsoUmbralKayak, historial}`. Se leen como respaldo cuando la app no tiene uno propio. Al escribir, leer el objeto entero y tocar solo lo propio.
+- `entrenamiento_perfil`: `{pesoKg, fechaNacimiento, sexo, historialPeso…}`. Mismo criterio que umbrales.
+- Resúmenes que lee Mi plan: `correr_sesiones`, `bici_sesiones`, `kayak_sesiones`, `fuerza_sesiones`, `rumbo_sesiones`. Lo pesado (muestras, tracks) va a IndexedDB, y en localStorage queda un resumen sin muestras (`_resumen:true`) con la misma clave.
+- TSS:
+  - Correr y Kayak: `100 × horas × (valor/umbral)²`.
+  - Bici: potencia normalizada/FTP.
+  - Fuerza: sRPE de Foster (`RPE × min / 6`).
+  - Rumbo: NGP con pendiente para correr, potencia estimada/FTP para bici.
+  - Una salida grabada por Rumbo **y** por la app dedicada cuenta una sola vez, la de la dedicada.
+- Rumbo abre las otras apps con `#rumbo=` en el link:
+  - Bici, Correr y Kayak: `z` + base64url de JSON comprimido con deflate-raw. Bici y Correr reciben el mismo paquete (gpx con la altura, escenas, horizonte, cerros, suelo y `land`: qué hay a cada costado cada 25 m: uso del suelo, casa más cercana con pisos y distancia, tipo de camino); Kayak recibe `app:'kayak'`, puntos, orillas y perfil, horizonte y cerros.
+  - Mi plan: base64 de `{v,s:[sesiones]}`, sin comprimir.
+- Hay una app de Backup (`profehugotdf.github.io`) que exporta y restaura localStorage e IndexedDB de todas.

@@ -1999,6 +1999,76 @@ function redimensionarImagen(file, maxLado=1024, calidad=0.75){
   });
 }
 
+// ---------- Estimación completa con IA (foto o descripción): macro y micronutrientes ----------
+// Hugo: "que la app estime todos los valores nutricionales posibles, micro y macronutrientes, en la foto o en describir
+// plato". Se piden con nombres fijos y se guardan con el nombre de USDA (+ "(estimado por …)"), así entran solos en
+// los totales del día y en el % de valores diarios, igual que lo que viene de las tablas.
+const NUTRI_IA = [
+  // [clave, nombre USDA, unidad, etiqueta]
+  ['proteinas_g','Protein','g','Proteínas'], ['grasas_g','Total lipid (fat)','g','Grasas totales'],
+  ['saturadas_g','Fatty acids, total saturated','g','Grasas saturadas'], ['monoinsaturadas_g','Fatty acids, total monounsaturated','g','Grasas monoinsaturadas'],
+  ['poliinsaturadas_g','Fatty acids, total polyunsaturated','g','Grasas poliinsaturadas'], ['omega3_g','Omega-3 (ALA+EPA+DHA)','g','Omega 3'],
+  ['trans_g','Fatty acids, total trans','g','Grasas trans'], ['colesterol_mg','Cholesterol','mg','Colesterol'],
+  ['carbohidratos_g','Carbohydrate, by difference','g','Carbohidratos'], ['azucares_g','Sugars, total','g','Azúcares totales'],
+  ['azucares_agregados_g','Sugars, added','g','Azúcares agregados'], ['fibra_g','Fiber, total dietary','g','Fibra'],
+  ['agua_g','Water','g','Agua'], ['alcohol_g','Alcohol, ethyl','g','Alcohol'], ['cafeina_mg','Caffeine','mg','Cafeína'],
+  ['sodio_mg','Sodium, Na','mg','Sodio'], ['potasio_mg','Potassium, K','mg','Potasio'], ['calcio_mg','Calcium, Ca','mg','Calcio'],
+  ['hierro_mg','Iron, Fe','mg','Hierro'], ['magnesio_mg','Magnesium, Mg','mg','Magnesio'], ['fosforo_mg','Phosphorus, P','mg','Fósforo'],
+  ['zinc_mg','Zinc, Zn','mg','Zinc'], ['cobre_mg','Copper, Cu','mg','Cobre'], ['manganeso_mg','Manganese, Mn','mg','Manganeso'],
+  ['selenio_ug','Selenium, Se','µg','Selenio'], ['yodo_ug','Iodine, I','µg','Yodo'],
+  ['vitamina_a_ug','Vitamin A, RAE','µg','Vitamina A'], ['vitamina_c_mg','Vitamin C, total ascorbic acid','mg','Vitamina C'],
+  ['vitamina_d_ug','Vitamin D (D2 + D3)','µg','Vitamina D'], ['vitamina_e_mg','Vitamin E (alpha-tocopherol)','mg','Vitamina E'],
+  ['vitamina_k_ug','Vitamin K (phylloquinone)','µg','Vitamina K'], ['tiamina_mg','Thiamin','mg','Tiamina (B1)'],
+  ['riboflavina_mg','Riboflavin','mg','Riboflavina (B2)'], ['niacina_mg','Niacin','mg','Niacina (B3)'],
+  ['pantotenico_mg','Pantothenic acid','mg','Ácido pantoténico (B5)'], ['vitamina_b6_mg','Vitamin B-6','mg','Vitamina B6'],
+  ['folato_ug','Folate, DFE','µg','Folato'], ['vitamina_b12_ug','Vitamin B-12','µg','Vitamina B12'], ['colina_mg','Choline, total','mg','Colina'],
+];
+function promptNutrientesIA(intro){
+  const claves = NUTRI_IA.map(n => n[0]).join(', ');
+  return intro + ` Para cada alimento estimá gramos, calorías, proteínas, grasas y carbohidratos. Para el PLATO COMPLETO estimá además todos los nutrientes que puedas, con valores de tablas de composición (USDA, tablas argentinas) para esas cantidades y formas de cocción: ${claves}. Usá 0 solo si el plato de verdad no lo tiene; si no podés estimar uno, poné null. ` +
+    `Respondé SOLO con JSON, sin texto alrededor: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total":{"calorias":0,` + NUTRI_IA.map(n => `"${n[0]}":0`).join(',') + `},"confianza":"alta|media|baja","notas":"qué supusiste (porciones, aceite, sal…)"}`;
+}
+// deja el resultado con los campos que ya usaba la pantalla (total_proteinas_g…) y recuerda las calorías originales
+function normalizarIA(p){
+  p = p || {}; p.alimentos = Array.isArray(p.alimentos) ? p.alimentos : [];
+  p.total = p.total && typeof p.total === 'object' ? p.total : {};
+  const sumA = k => p.alimentos.reduce((s, a) => s + (+a[k] || 0), 0);
+  if(typeof p.total.proteinas_g !== 'number') p.total.proteinas_g = p.total_proteinas_g ?? sumA('proteinas_g');
+  if(typeof p.total.grasas_g !== 'number') p.total.grasas_g = p.total_grasas_g ?? sumA('grasas_g');
+  if(typeof p.total.carbohidratos_g !== 'number') p.total.carbohidratos_g = p.total_carbohidratos_g ?? sumA('carbohidratos_g');
+  p.total_proteinas_g = p.total.proteinas_g; p.total_grasas_g = p.total.grasas_g; p.total_carbohidratos_g = p.total.carbohidratos_g;
+  p._kcal0 = sumA('calorias') || +p.total.calorias || 0;
+  return p;
+}
+function editarNutrienteIA(varName, clave, valor){ const p = window[varName]; if(!p) return; p.total[clave] = valor === '' ? null : (parseFloat(valor) || 0); (p._editados = p._editados || {})[clave] = true; }
+// lista desplegable con todo lo estimado (editable); los macros siguen arriba como antes
+function htmlNutrientesIA(varName){
+  const p = window[varName]; if(!p || !p.total) return '';
+  const filas = NUTRI_IA.filter(n => !['proteinas_g','grasas_g','carbohidratos_g'].includes(n[0])).map(([k, , u, et]) => {
+    const v = p.total[k];
+    return `<div class="fila" style="gap:6px; align-items:center; margin:3px 0;"><span style="flex:2; font-size:.85rem;">${et}</span>
+      <input type="number" step="any" value="${v == null ? '' : +(+v).toFixed(2)}" oninput="editarNutrienteIA('${varName}','${k}',this.value)" placeholder="—" style="flex:1; padding:4px 6px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
+      <span style="flex:none; width:28px; font-size:.8rem;">${u}</span></div>`; }).join('');
+  const n = NUTRI_IA.filter(x => p.total[x[0]] != null).length;
+  return `<details class="campo" style="margin-top:6px;"><summary style="cursor:pointer;"><b>Vitaminas, minerales y más</b> (${n} estimados${p.confianza ? ' · confianza ' + p.confianza : ''})</summary>
+    ${p.notas ? `<p class="detalle" style="font-size:.8rem; margin:4px 0;">${String(p.notas).replace(/[<>]/g,'')}</p>` : ''}
+    <p class="detalle" style="font-size:.78rem; margin:4px 0;">Son estimaciones. Si cambiás las calorías de los ingredientes, al registrar los macros y estos valores se ajustan en la misma proporción (salvo los que escribas a mano).</p>
+    ${filas}</details>`;
+}
+// lo que se guarda en el registro: macros (los de arriba, editables) y el resto escalado si cambiaron las calorías
+function nutrientesDesdeIA(p, como){
+  const out = [], kcal = p.alimentos.reduce((s, a) => s + (+a.calorias || 0), 0), f = p._kcal0 > 0 && kcal > 0 ? kcal / p._kcal0 : 1;
+  const macro = { proteinas_g: p.total_proteinas_g, grasas_g: p.total_grasas_g, carbohidratos_g: p.total_carbohidratos_g }, me = p._macroEditado || {};
+  for(const [k, usda, u] of NUTRI_IA){
+    let v = k in macro ? macro[k] : p.total[k];
+    if(v == null || v === '' || isNaN(+v)) continue; v = +v;
+    // lo que tocaste a mano queda como lo pusiste; lo demás sigue a las calorías si cambiaste cantidades
+    if(k in macro ? !me['total_' + k] : !(p._editados && p._editados[k])) v = v * f;
+    out.push({ nombre: usda + ' (estimado por ' + como + ')', valor: Math.round(v * 100) / 100, unidad: u });
+  }
+  return out;
+}
+
 function obtenerApiKeyAnthropic(){
   let key = localStorage.getItem('nutricion_api_key');
   if(!key){
@@ -2029,10 +2099,10 @@ async function identificarDescripcion(){
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-6',
-        max_tokens:1024,
+        max_tokens:3000,
         messages:[{
           role:'user',
-          content: `Descripción de un plato: "${descripcion}". Identificá los alimentos/ingredientes mencionados, estimá gramos, calorías y macronutrientes (proteínas, grasas, carbohidratos en gramos) de cada uno según la descripción. Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total_calorias_estimadas":0,"total_proteinas_g":0,"total_grasas_g":0,"total_carbohidratos_g":0}`
+          content: promptNutrientesIA(`Descripción de un plato: "${descripcion}". Identificá los alimentos o ingredientes mencionados y estimá cantidades según la descripción.`)
         }]
       })
     });
@@ -2043,7 +2113,7 @@ async function identificarDescripcion(){
     }
     const texto = data.content.find(b => b.type === 'text')?.text || '{}';
     const limpio = texto.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(limpio);
+    const parsed = normalizarIA(JSON.parse(limpio));
     window._descResultado = parsed;
     renderizarDescripcionEditable();
   }catch(e){
@@ -2079,6 +2149,7 @@ function renderizarDescripcionEditable(){
         <input type="number" value="${p.total_carbohidratos_g ?? ''}" oninput="editarMacroDesc('total_carbohidratos_g', this.value)" placeholder="Carbos g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
       </div>
     </div>
+    ${htmlNutrientesIA('_descResultado')}
     <button class="btn btn-primario" onclick="registrarDescripcion()" style="margin-top:10px;">Registrar todo</button>
   `;
 }
@@ -2092,7 +2163,7 @@ function editarItemDesc(i, campo, valor){
 }
 
 function editarMacroDesc(campo, valor){
-  window._descResultado[campo] = parseFloat(valor) || 0;
+  window._descResultado[campo] = parseFloat(valor) || 0; (window._descResultado._macroEditado = window._descResultado._macroEditado || {})[campo] = true;
 }
 
 function agregarItemDesc(){
@@ -2109,14 +2180,7 @@ function registrarDescripcion(){
   const parsed = window._descResultado;
   const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
 
-  const nutrientesEstimados = [];
-  if(typeof parsed.total_proteinas_g === 'number')
-    nutrientesEstimados.push({ nombre:'Protein (estimado por descripción)', valor:parsed.total_proteinas_g, unidad:'g' });
-  if(typeof parsed.total_grasas_g === 'number')
-    nutrientesEstimados.push({ nombre:'Total lipid (estimado por descripción)', valor:parsed.total_grasas_g, unidad:'g' });
-  if(typeof parsed.total_carbohidratos_g === 'number')
-    nutrientesEstimados.push({ nombre:'Carbohydrate, by difference (estimado por descripción)', valor:parsed.total_carbohidratos_g, unidad:'g' });
-
+  const nutrientesEstimados = nutrientesDesdeIA(parsed, 'descripción'); // todos los que estimó la IA (macros, vitaminas, minerales…)
   agregarAlRegistroHoy({
     nombre,
     kcal: parsed.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0),
@@ -2151,12 +2215,12 @@ async function identificarFoto(){
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-6',
-        max_tokens:1024,
+        max_tokens:3000,
         messages:[{
           role:'user',
           content:[
             { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:base64 } },
-            { type:'text', text:'Identificá los alimentos del plato, estimá gramos, calorías y macronutrientes (proteínas, grasas, carbohidratos en gramos). Respondé SOLO con JSON: {"alimentos":[{"nombre":"","gramos_estimados":0,"calorias":0,"proteinas_g":0,"grasas_g":0,"carbohidratos_g":0}],"total_calorias_estimadas":0,"total_proteinas_g":0,"total_grasas_g":0,"total_carbohidratos_g":0}' }
+            { type:'text', text: promptNutrientesIA('Foto de un plato. Identificá los alimentos que se ven y estimá las cantidades por el tamaño del plato y las porciones.') }
           ]
         }]
       })
@@ -2168,7 +2232,7 @@ async function identificarFoto(){
     }
     const texto = data.content.find(b => b.type === 'text')?.text || '{}';
     const limpio = texto.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(limpio);
+    const parsed = normalizarIA(JSON.parse(limpio));
     window._fotoResultado = parsed; // mutable, se edita antes de registrar
     renderizarFotoEditable();
   }catch(e){
@@ -2204,6 +2268,7 @@ function renderizarFotoEditable(){
         <input type="number" value="${p.total_carbohidratos_g ?? ''}" oninput="editarMacroFoto('total_carbohidratos_g', this.value)" placeholder="Carbos g" style="flex:1; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; background:#fff;">
       </div>
     </div>
+    ${htmlNutrientesIA('_fotoResultado')}
     <button class="btn btn-primario" onclick="registrarFoto()" style="margin-top:10px;">Registrar todo</button>
   `;
 }
@@ -2217,7 +2282,7 @@ function editarItemFoto(i, campo, valor){
 }
 
 function editarMacroFoto(campo, valor){
-  window._fotoResultado[campo] = parseFloat(valor) || 0;
+  window._fotoResultado[campo] = parseFloat(valor) || 0; (window._fotoResultado._macroEditado = window._fotoResultado._macroEditado || {})[campo] = true;
 }
 
 function agregarItemFoto(){
@@ -2233,14 +2298,7 @@ function registrarFoto(){
   const parsed = window._fotoResultado;
   const nombre = parsed.alimentos.map(a => a.nombre).join(' + ');
 
-  const nutrientesEstimados = [];
-  if(typeof parsed.total_proteinas_g === 'number')
-    nutrientesEstimados.push({ nombre:'Protein (estimado por foto)', valor:parsed.total_proteinas_g, unidad:'g' });
-  if(typeof parsed.total_grasas_g === 'number')
-    nutrientesEstimados.push({ nombre:'Total lipid (estimado por foto)', valor:parsed.total_grasas_g, unidad:'g' });
-  if(typeof parsed.total_carbohidratos_g === 'number')
-    nutrientesEstimados.push({ nombre:'Carbohydrate, by difference (estimado por foto)', valor:parsed.total_carbohidratos_g, unidad:'g' });
-
+  const nutrientesEstimados = nutrientesDesdeIA(parsed, 'foto'); // todos los que estimó la IA (macros, vitaminas, minerales…)
   agregarAlRegistroHoy({
     nombre,
     kcal: parsed.alimentos.reduce((acc, a) => acc + (a.calorias || 0), 0),
@@ -2284,12 +2342,15 @@ const TABLA_VALORES_DIARIOS = [
   { match:['carbohydrate, by difference','carbohydrate'], etiqueta:'Carbohidratos', dv:275, unidad:'g' },
   { match:['cholesterol'], etiqueta:'Colesterol', dv:300, unidad:'mg' },
   { match:['caffeine'], etiqueta:'Cafeína', dv:400, unidad:'mg' }, // no es %VD oficial de la FDA — 400mg/día es el umbral orientativo (EFSA/FDA) para adultos sanos
+  { match:['sugars, added'], etiqueta:'Azúcares agregados', dv:50, unidad:'g' },
+  { match:['choline'], etiqueta:'Colina', dv:550, unidad:'mg' },
+  { match:['omega-3'], etiqueta:'Omega 3', dv:1.6, unidad:'g' }, // ingesta adecuada de ALA (hombre adulto), orientativa
 ];
 
 function matchValorDiario(nombre, unidad){
   if(unidad === 'IU') return null; // evita duplicar con la versión en µg/mg del mismo nutriente
   const n = nombre.toLowerCase();
-  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
+  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m) && !(m === 'saturated' && /unsaturated/.test(n)))) || null; // mono/poliinsaturadas no son saturadas
 }
 
 // ---------- Revisión de consistencia de una comida guardada con Claude ----------
@@ -3658,7 +3719,7 @@ function confirmarReregistro(){
 // ---------- Buscador de errores de carga (unidad equivocada, valores implausibles) ----------
 function buscarDefinicionPorNombre(nombre){
   const n = nombre.toLowerCase();
-  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m))) || null;
+  return TABLA_VALORES_DIARIOS.find(def => def.match.some(m => n.includes(m) && !(m === 'saturated' && /unsaturated/.test(n)))) || null; // mono/poliinsaturadas no son saturadas
 }
 
 // Alimentos naturalmente extremos en ciertos nutrientes — no marcar como error
