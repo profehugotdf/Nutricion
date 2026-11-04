@@ -159,6 +159,11 @@
     <span class="num" id="totalPasosKcal" style="font-size:1rem;">0 kcal</span>
   </div>
   <p class="detalle" id="detallePasosDescontados" style="text-align:right; margin-top:-6px;"></p>
+  <div class="fila">
+    <span class="etiqueta">Efecto térmico de los alimentos</span>
+    <span class="num" id="totalTEF" style="font-size:1rem;">0 kcal</span>
+  </div>
+  <p class="detalle" id="detalleTEF" style="text-align:right; margin-top:-6px;"></p>
   <div class="fila" style="border-top:1px solid var(--borde); padding-top:8px;">
     <span class="etiqueta">Balance</span>
     <span class="num" id="balance">0 kcal</span>
@@ -754,7 +759,7 @@ function escribirResumenDiarioCompartido(consumido, gastoTotal, balance){
   const proteinasG = acumuladoNutrientes['Proteínas'] ? Math.round(acumuladoNutrientes['Proteínas'].valor) : null;
 
   const resumen = leerJSON(CLAVE_RESUMEN_COMPARTIDO, {});
-  resumen[hoyISO()] = { consumido, gastoTotal, balance, proteinasG };
+  resumen[hoyISO()] = { consumido, gastoTotal, balance, proteinasG, tefKcal: calcularTEFHoy().kcal };
   escribirJSON(CLAVE_RESUMEN_COMPARTIDO, resumen);
 }
 
@@ -1628,6 +1633,37 @@ function totalConsumidoHoy(){
   return items.reduce((acc, i) => acc + (i.kcal || 0), 0);
 }
 
+// ---------- Efecto térmico de los alimentos (TEF) ----------
+// Por macro: proteínas 25% de su energía, carbohidratos 7%, grasas 2%.
+// Si un ítem no tiene los tres macros, se usa 10% de sus kcal como respaldo.
+const TEF_PORCENTAJE_RESPALDO = 0.10;
+function calcularTEFItem(item){
+  const m = { 'Proteínas':null, 'Carbohidratos':null, 'Grasas totales':null };
+  (item.nutrientes || []).forEach(n => {
+    const def = matchValorDiario(n.nombre, n.unidad);
+    if(def && def.etiqueta in m && typeof n.valor === 'number'){
+      m[def.etiqueta] = (m[def.etiqueta] || 0) + n.valor;
+    }
+  });
+  const completo = m['Proteínas'] !== null && m['Carbohidratos'] !== null && m['Grasas totales'] !== null;
+  if(completo){
+    return { kcal: m['Proteínas']*4*0.25 + m['Carbohidratos']*4*0.07 + m['Grasas totales']*9*0.02, porMacros:true };
+  }
+  return { kcal: (item.kcal || 0) * TEF_PORCENTAJE_RESPALDO, porMacros:false };
+}
+
+function calcularTEFHoy(){
+  const registro = leerJSON(CLAVE_REGISTRO_DIARIO, {});
+  const items = registro[hoyISO()] || [];
+  let kcal = 0, itemsPorMacros = 0;
+  items.forEach(i => {
+    const r = calcularTEFItem(i);
+    kcal += r.kcal;
+    if(r.porMacros) itemsPorMacros++;
+  });
+  return { kcal: Math.round(kcal), itemsPorMacros, itemsTotal: items.length };
+}
+
 // ---------- Render principal ----------
 function renderizarTodo(){
   document.getElementById('fechaHoy').textContent =
@@ -1640,7 +1676,9 @@ function renderizarTodo(){
   const tmb = calcularTMB();
   const pasosHoy = obtenerPasosHoy();
   const kcalPasos = calcularKcalPorPasos(pasosHoy);
-  const gastoTotal = (tmb || 0) + gastoEntrenamiento + kcalPasos;
+  const tef = calcularTEFHoy();
+  const gastoSinTEF = (tmb || 0) + gastoEntrenamiento + kcalPasos;
+  const gastoTotal = gastoSinTEF + tef.kcal;
   const balance = gastoTotal - consumido;
 
   document.getElementById('totalConsumido').textContent = `${consumido} kcal`;
@@ -1660,6 +1698,10 @@ function renderizarTodo(){
   document.getElementById('detalleGastoPorDeporte').textContent = desglose;
   document.getElementById('inputPasosHoy').value = pasosHoy || '';
   document.getElementById('totalPasosKcal').textContent = `${kcalPasos} kcal`;
+  document.getElementById('totalTEF').textContent = `${tef.kcal} kcal`;
+  document.getElementById('detalleTEF').textContent = tef.itemsTotal === 0 ? '' :
+    (tef.itemsPorMacros === tef.itemsTotal ? 'calculado por macros' :
+     `${tef.itemsPorMacros} de ${tef.itemsTotal} comidas por macros, el resto 10% de sus kcal`);
   const pasosSesiones = calcularPasosSesionesHoy();
   document.getElementById('detallePasosDescontados').textContent =
     pasosSesiones > 0 ? `(${pasosSesiones} pasos de sesiones de hoy ya contados aparte, restados del total)` : '';
@@ -1676,7 +1718,8 @@ function renderizarTodo(){
   const plan = calcularDeficitDiarioObjetivo();
   if(plan && !plan.completado){
     filaObjetivo.style.display = 'flex';
-    const objetivoKcal = gastoTotal - plan.deficitDiario;
+    // El TEF depende de lo que comés; se resuelve I = G + 10%·I − déficit para que el objetivo no se mueva al registrar
+    const objetivoKcal = Math.round((gastoSinTEF - plan.deficitDiario) / (1 - TEF_PORCENTAJE_RESPALDO));
     const restante = objetivoKcal - consumido;
     document.getElementById('objetivoCaloriasHoy').textContent =
       `${objetivoKcal} kcal (${restante >= 0 ? 'quedan '+restante : 'te pasaste '+Math.abs(restante)})`;
@@ -1894,6 +1937,10 @@ async function buscarProducto(){
     }
     const p = data.product;
     const kcal100 = p.nutriments?.['energy-kcal_100g'] ?? null;
+    const nm = p.nutriments || {};
+    const macros100 = (typeof nm.proteins_100g === 'number' && typeof nm.carbohydrates_100g === 'number' && typeof nm.fat_100g === 'number')
+      ? { prot:nm.proteins_100g, carb:nm.carbohydrates_100g, grasa:nm.fat_100g } : null;
+    window._productoMacros100 = macros100;
     resultadoDiv.innerHTML = `
       <div class="campo">
         <label>${p.product_name || 'Producto sin nombre'} ${p.brands ? '· '+p.brands : ''}</label>
@@ -1915,7 +1962,13 @@ function registrarProducto(nombre, kcal100){
   const gramos = parseFloat(document.getElementById('gramosConsumidos').value);
   if(isNaN(gramos) || kcal100 === null){ alert('Ingresá los gramos consumidos.'); return; }
   const kcal = Math.round((kcal100 * gramos) / 100);
-  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'código de barras' });
+  const m = window._productoMacros100;
+  const nutrientes = m ? [
+    { nombre:'Protein', valor:Math.round(m.prot*gramos)/100, unidad:'g' },
+    { nombre:'Total lipid (fat)', valor:Math.round(m.grasa*gramos)/100, unidad:'g' },
+    { nombre:'Carbohydrate, by difference', valor:Math.round(m.carb*gramos)/100, unidad:'g' }
+  ] : [];
+  agregarAlRegistroHoy({ nombre: `${nombre} (${gramos}g)`, kcal, origen:'código de barras', nutrientes });
   document.getElementById('inputCodigoBarras').value = '';
   document.getElementById('resultadoProducto').innerHTML = '';
   cerrarModal('modalCodigoBarras');
