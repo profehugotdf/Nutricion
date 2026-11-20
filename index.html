@@ -3585,17 +3585,25 @@ function calcularRecientes(todos, limite = 8){
   return recientes;
 }
 
+// Mismo alimento aunque cambie la cantidad: "Banana, raw (100g)" y "Banana, raw (120g)" cuentan juntos.
+function nombreBaseAlimento(nombre){
+  return String(nombre || '').replace(/\s*\((?:[\d.,]+\s*g|[\d.,]+\s*porciones?)\)\s*$/i, '').trim().toLowerCase();
+}
+
+// Más veces registrado primero; si empatan, el usado más recientemente. Se muestra la última cantidad usada.
 function calcularFrecuentes(todos, limite = 8){
   const conteo = {};
   todos.forEach(item => {
-    if(!conteo[item.nombre]) conteo[item.nombre] = { item, veces:0 };
-    conteo[item.nombre].veces++;
+    const k = nombreBaseAlimento(item.nombre);
+    if(!conteo[k]) conteo[k] = { item, veces:0 };
+    conteo[k].veces++;
+    if(new Date(item.hora) > new Date(conteo[k].item.hora)) conteo[k].item = item;
   });
   return Object.values(conteo)
     .filter(c => c.veces > 1)
-    .sort((a, b) => b.veces - a.veces)
+    .sort((a, b) => (b.veces - a.veces) || (new Date(b.item.hora) - new Date(a.item.hora)))
     .slice(0, limite)
-    .map(c => c.item);
+    .map(c => ({ ...c.item, _veces:c.veces }));
 }
 
 window._seleccionMultiple = new Map();
@@ -3616,7 +3624,7 @@ function renderListaConCheckbox(lista, elId, vacioTxt, prefijo){
         <input type="checkbox" onclick="event.stopPropagation(); toggleSeleccionMultiple('${clave}')" ${marcado ? 'checked' : ''} style="margin-right:10px; width:20px; height:20px;">
         <div style="flex:1;">
           <div class="nombre">${i.nombre}</div>
-          <div class="detalle">${i.origen || ''}</div>
+          <div class="detalle">${i.origen || ''}${i._veces ? ` · ${i._veces} veces` : ''}</div>
         </div>
         <div class="kcal">${i.kcal} kcal</div>
       </div>
